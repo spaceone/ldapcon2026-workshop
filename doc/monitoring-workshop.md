@@ -198,7 +198,7 @@ admin/...
 7. Goto dashboard
 
 - on the side panel, click on "Dashboards"
-- click on "Symas OpenLDAP Monitor v1.0"
+- click on "OpenLDAP Monitor v3"
 - change the ldap hostname, view the stats
 - why isn't ldap2 working? (hint, go to next section)
 
@@ -328,7 +328,11 @@ curl -sk https://127.0.0.1:9100/metrics   --cert /opt/symas/ssl/ldap2-test.ldapc
 
 7. Open firewall so prometheus can scrape stats
 
+We are allowing the monitor host access to the prometheus port.
+
 - replace [hostname]:
+
+Ping the monitor host:
 
 ```bash
 ping [hostname].ldapcon2026.symas.net
