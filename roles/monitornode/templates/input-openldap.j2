@@ -1,0 +1,9 @@
+###############################################################################
+# SLAPD Monitor COLLECTOR - use new inputs.ldap plugin                        #
+###############################################################################
+[[inputs.ldap]]
+  dialect = "openldap"
+  bind_mechanism = "EXTERNAL"
+  server = "ldapi://%2Fvar%2Fsymas%2Frun%2Fldapi"
+  interval = "10s"
+# log_level = "debug"

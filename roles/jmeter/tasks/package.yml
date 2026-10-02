@@ -1,0 +1,59 @@
+- name: set java defaults for tasks
+  block:
+    - name: set java 21 debian
+      set_fact:
+        java_package_name: openjdk-21-jdk
+        bash_home: /etc/profile
+        java_home: java-21-openjdk-amd64
+      when: ansible_os_family == "Debian"
+  tags: [ java ]
+
+- name: install packages
+  package:
+    name:
+      - gcc
+      - make
+      - '{{ java_package_name }}'
+      - maven
+      - git
+    state: latest
+- name: set JAVA_HOME for all users (for maven)
+  blockinfile:
+    dest: '{{ bash_home }}'
+    state: present
+    block: |
+      export 'JAVA_HOME=/usr/lib/jvm/{{ java_home }}'
+      export PATH="$JAVA_HOME/bin:$PATH"
+  tags: [ java ]
+- name: git clone jmeter repo
+  git:
+    repo: '{{ repo }}'
+    dest: '{{ repo_directory }}'
+    clone: yes
+    version: "{{ repo_version }}"
+    update: no
+  when: loadgen_package is not defined
+  tags: [ git ]
+- name: upload ldap-load-gen artifact to target
+  become: true
+  ansible.builtin.copy:
+    src: "{{ loadgen_package }}"
+    dest: /tmp/ldaploadgen.zip
+    mode: "0644"
+  when: loadgen_package is defined
+  tags: [ ldapload ]
+- name: unpack ldap-load-gen
+  become: true
+  ansible.builtin.unarchive:
+    remote_src: true
+    src: /tmp/ldaploadgen.zip
+    dest: /opt/symas/
+  when: loadgen_package is defined
+  tags: [ ldapload ]
+- name: build jmeter lib
+  shell: mvn clean install
+  register: mvn_result
+  environment:
+    JAVA_HOME: "/usr/lib/jvm/{{ java_home }}"
+  args:
+    chdir: '{{ repo_directory }}'

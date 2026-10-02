@@ -1,0 +1,23 @@
+- name: Upload letsencrypt state
+  synchronize:
+    src: "{{ letsencrypt_path }}"
+    dest: /etc/letsencrypt
+    owner: false
+    group: false
+  register: letsencrypt_state
+
+- name: Expose as hostname for compatibility
+  file:
+    path: "/etc/letsencrypt/live/{{ inventory_hostname }}"
+    src: "/etc/letsencrypt/live/{{ letsencrypt_domains[0] }}"
+    state: link
+    force: true
+  when: letsencrypt_domains[0] != inventory_hostname
+
+- name: Run deploy hooks
+  command:
+    argv:
+      - run-parts
+      - /etc/letsencrypt/renewal-hooks/deploy/
+  when: letsencrypt_state.changed
+  tags: deploy

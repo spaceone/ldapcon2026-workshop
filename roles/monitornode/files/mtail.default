@@ -1,0 +1,3 @@
+LOGS="/var/log/slapd/slapd.log"
+HOST="localhost"
+#PORT defaults to 3903

@@ -1,0 +1,121 @@
+{%- set done = ppolicy_stages_done | default(0) | int -%}
+# The one policy the workshop starts with: expiry, lockout, quality.
+# Everything else is built on top of this during the workshop.
+#
+# With ppolicy_stages_done > 0 (Ansible only) this renders the policies
+# as the workshop leaves them after that many stages.  The seed is 0.
+dn: cn=default,ou=policies,{{ suffix }}
+objectClass: namedPolicy
+objectClass: pwdPolicy
+{% if done >= 4 %}
+objectClass: pwdPolicyChecker
+{% endif %}
+{% if done >= 7 %}
+objectClass: pwdHashingPolicy
+{% endif %}
+cn: default
+description: Applies to everyone until stage 5 splits it up.
+pwdAttribute: userPassword
+# Expiry: one year, warn for the last month.
+pwdMaxAge: 31536000
+pwdExpireWarning: 2592000
+# Quality: at least 8 characters, and refuse what we cannot check.
+pwdMinLength: 8
+pwdCheckQuality: 2
+# Lockout: five strikes, locked for five minutes.
+pwdMaxFailure: 5
+pwdLockout: TRUE
+pwdLockoutDuration: 300
+{% if done >= 2 %}
+# Stage 2: how many failures are kept on record.
+pwdMaxRecordedFailure: 5
+{% endif %}
+# Do not let a password be reused immediately.
+pwdInHistory: 3
+# An administrative reset must be followed by a change.
+pwdMustChange: TRUE
+pwdAllowUserChange: TRUE
+{% if done >= 4 %}
+# Stage 4: ppm, configured as follows (base64 because it is multi-line):
+#   minQuality 3
+#   checkRDN 1
+#   forbiddenChars
+#   maxConsecutivePerClass 0
+#   useCracklib 0
+#   class-upperCase ABCDEFGHIJKLMNOPQRSTUVWXYZ 0 1 0
+#   class-lowerCase abcdefghijklmnopqrstuvwxyz 0 1 0
+#   class-digit 0123456789 0 1 0
+#   class-special <>,?;.:/!%*^$&~"#'{([-|`_@)]=}+ 0 1 0
+pwdUseCheckModule: TRUE
+pwdCheckModuleArg:: bWluUXVhbGl0eSAzCmNoZWNrUkROIDEKZm9yYmlkZGVuQ2hhcnMKbWF4Q29uc2VjdXRpdmVQZXJDbGFzcyAwCnVzZUNyYWNrbGliIDAKY2xhc3MtdXBwZXJDYXNlIEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaIDAgMSAwCmNsYXNzLWxvd2VyQ2FzZSBhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5eiAwIDEgMApjbGFzcy1kaWdpdCAwMTIzNDU2Nzg5IDAgMSAwCmNsYXNzLXNwZWNpYWwgPD4sPzsuOi8hJSpeJCZ+IiMneyhbLXxgX0ApXT19KyAwIDEgMAo=
+{% endif %}
+{% if done >= 7 %}
+# Stage 7: new passwords are argon2, and old ones are upgraded as their
+# owners log in.
+pwdDefaultHash: {ARGON2}
+pwdRehashOnBind: TRUE
+{% endif %}
+{% if done >= 3 %}
+
+# Stage 3: slow attackers down instead of locking anyone out.
+dn: cn=hardened,ou=policies,{{ suffix }}
+objectClass: namedPolicy
+objectClass: pwdPolicy
+cn: hardened
+description: Delay, never lock. See stage 3.
+pwdAttribute: userPassword
+pwdMaxAge: 31536000
+pwdMinLength: 8
+pwdLockout: TRUE
+pwdMaxFailure: 0
+pwdMinDelay: 1
+pwdMaxDelay: 4
+{% endif %}
+{% if done >= 5 %}
+
+# Stage 5: one policy per kind of account, picked by ppolicy_rules.
+dn: cn=service,ou=policies,{{ suffix }}
+objectClass: namedPolicy
+objectClass: pwdPolicy
+{% if done >= 7 %}
+objectClass: pwdHashingPolicy
+{% endif %}
+cn: service
+description: Service accounts. Never expires, never locks.
+pwdAttribute: userPassword
+pwdLockout: FALSE
+pwdMaxFailure: 0
+pwdMinLength: 20
+pwdInHistory: 0
+{% if done >= 7 %}
+# Stage 7: binds thousands of times a minute, so no argon2.
+pwdDefaultHash: {SSHA512}
+{% endif %}
+
+dn: cn=external,ou=policies,{{ suffix }}
+objectClass: namedPolicy
+objectClass: pwdPolicy
+cn: external
+description: Partner accounts. Short leash.
+pwdAttribute: userPassword
+pwdMaxAge: 7776000
+pwdLockout: TRUE
+pwdMaxFailure: 3
+pwdLockoutDuration: 900
+pwdMinLength: 12
+
+dn: cn=privileged,ou=policies,{{ suffix }}
+objectClass: namedPolicy
+objectClass: pwdPolicy
+cn: privileged
+description: On-call staff. Tighter than ordinary users.
+pwdAttribute: userPassword
+pwdMaxAge: 7776000
+pwdLockout: TRUE
+pwdMaxFailure: 3
+pwdMinLength: 16
+{% if done >= 6 %}
+# Stage 6: 90 days without a login and the account expires.
+pwdMaxIdle: 7776000
+{% endif %}
+{% endif %}

@@ -1,0 +1,8 @@
+- name: slapd.conf
+  template:
+    src: balancer.conf.j2
+    dest: /etc/opt/symas/slapd.conf
+    mode: "0600"
+    owner: openldap
+  notify: restart slapd
+

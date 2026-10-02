@@ -1,0 +1,5 @@
+Types: deb # deb-src
+URIs: https://repo.symas.com/repo/deb/{{ openldap_repo | default('main/release26') }}
+Suites: {{ ansible_facts.distribution_release }}
+Components: main
+Signed-By: /usr/share/keyrings/symas-key.asc

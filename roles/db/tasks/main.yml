@@ -1,0 +1,137 @@
+- name: Retrieve symas signing key
+  get_url:
+    url: "{{ repo_key }}"
+    dest: /etc/apt/keyrings/symas-key.asc
+
+- name: Set up Symas repo
+  deb822_repository:
+    name: symas
+    uris: "https://repo.symas.com/repo/deb/{{ openldap_repo }}"
+    suites: "{{ ansible_facts.distribution_release }}"
+    components: main
+    signed_by: /etc/apt/keyrings/symas-key.asc
+  when: has_deb822
+  notify: update apt cache
+
+- name: Set up Symas repo
+  apt_repository:
+    filename: symas
+    repo: "deb [signed-by=/etc/apt/keyrings/symas-key.asc] https://repo.symas.com/repo/deb/{{ openldap_repo }} {{ ansible_facts.distribution_release }} main"
+    state: present
+  when: not has_deb822
+  notify: update apt cache
+
+- name: Enable automatic updates
+  copy:
+    src: apt.conf
+    dest: /etc/apt/apt.conf.d/99symas-repo
+
+- name: openldap user and group
+  user:
+    name: openldap
+    state: present
+    system: true
+    create_home: false
+
+- name: Create directories
+  file:
+    path: '{{ item }}'
+    state: directory
+    owner: openldap
+    group: openldap
+  loop:
+    - "/var/log/slapd"
+    - "/opt/symas/ssl/letsencrypt"
+
+- name: Deploy letsencrypt hook
+  copy:
+    src: certbot_hooks_deploy
+    dest: /etc/letsencrypt/renewal-hooks/deploy/openldap
+    mode: '0711'
+  register: letsencrypt_hook
+
+- name: Trigger letsencrypt deploy hook
+  command:
+    argv:
+      - /etc/letsencrypt/renewal-hooks/deploy/openldap
+  when: letsencrypt_hook.changed
+
+- name: /var/symas/run ownership
+  copy:
+    src: var_symas_run.conf
+    dest: /etc/tmpfiles.d/var_symas_run.conf
+  register: tmpfiles
+
+- name: Adjust ownership now
+  command:
+    argv:
+      - systemd-tmpfiles
+      - '--create'
+  when: tmpfiles.changed
+
+- name: make sure directory exists
+  file:
+    path: /etc/systemd/system/symas-openldap-server.service.d
+    state: directory
+
+- name: User settings
+  copy:
+    src: openldap_user.conf
+    dest: /etc/systemd/system/symas-openldap-server.service.d/openldap_user.conf
+  notify: reload systemd
+
+- name: Apply pending changes
+  meta: flush_handlers
+
+- name: OpenLDAP packages
+  apt:
+    name:
+      - symas-openldap-clients
+      - symas-openldap-servers
+    state: latest
+
+- name: cert
+  include_role:
+    name: ca
+    tasks_from: cert
+  vars:
+    privatekey_owner: openldap
+    privatekey_group: openldap
+
+- name: Create config directory
+  file:
+    path: "/etc/opt/symas/"
+    state: directory
+
+- name: Set up symlink to actual tracked config
+  file:
+    path: "/opt/symas/etc/openldap/slapd.conf"
+    state: link
+    force: yes
+    src: "/etc/opt/symas/slapd.conf"
+
+- name: defaults
+  template:
+    src: "defaults.{{ openldap_role }}.j2"
+    dest: /etc/default/symas-openldap
+
+- name: Prepare configuration and data
+  include_tasks: "{{ openldap_role }}.yml"
+
+- name: Start slapd
+  service:
+    name: symas-openldap-server
+    state: started
+    enabled: true
+
+- name: Allow LDAPS access
+  firewalld:
+    service: ldaps
+    permanent: yes
+    zone: public
+    immediate: yes
+    state: enabled
+
+- name: Set up mtail
+  ansible.builtin.include_tasks: mtail.yml
+  tags: [ never, mtail ]

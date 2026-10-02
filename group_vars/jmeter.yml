@@ -1,0 +1,61 @@
+# Setup params for Jmeter loadtesting toolkit:
+
+# These enable the LDAP Load Generator:
+type: 'ldap-load-gen'
+base_directory: '/opt/symas'
+repo: 'https://git.symas.net/symas-public/ldap-load-gen.git'
+repo_directory: '{{ base_directory }}/ldap-load-gen'
+repo_version: 'main'
+
+loadgen_on_startup: true
+
+rootpw: '{{ lookup("password", "secrets/rootpw") }}'
+
+#repo_version: 'modrdn'
+jmeterscripts:
+  - addUser
+  - delUser
+  - addGroup
+  - delGroup
+  - checkUser
+  - modUser
+  - assignGroup
+
+# ldap loader params:
+min_connections_admin: 10
+max_connections_admin: 25
+min_connections_user: 10
+max_connections_user: 25
+pool_evict_delay: 600000
+size: 500
+failures: 4
+repeat: 2
+# if enabled, will connect using TLS or LDAPS:
+#encryption: enable.ldap.starttls
+encryption: enable.ldap.ssl
+truststore_name: '/etc/ssl/certs/java/cacerts'
+truststorepw: '{{ lookup("password", "secrets/truststorepw") }}'
+
+ldap_host: "{{ groups.jmeter.ldap_host }}"
+listen_port: 636
+group_objectclass: groupOfMembers
+group_member_attr_name: member
+member_attribute_name: memberOf
+loops: 100
+num_threads: 5
+
+# soak test
+groups_size: 10
+group_loops: 5
+group_threads: 5
+
+# jmeter setup args:
+ramp_time: 1
+sleep: 0
+throughput: 600
+update: false
+verify: false
+contactinfo: false
+reverselookup: false
+verify_add: false
+password: "{{ rootpw }}"

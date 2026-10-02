@@ -1,0 +1,2 @@
+deb [signed-by=/usr/share/keyrings/symas-key.asc] https://repo.symas.com/repo/deb/{{ openldap_repo | default('main/release26') }} {{ ansible_facts.distribution_release }} main
+# deb-src [signed-by=/usr/share/keyrings/symas-key.asc] https://repo.symas.com/repo/deb/{{ openldap_repo | default('main/release26') }} {{ ansible_facts.distribution_release }} main

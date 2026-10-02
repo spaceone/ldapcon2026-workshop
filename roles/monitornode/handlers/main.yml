@@ -1,0 +1,11 @@
+- name: restart slapd
+  service:
+    name: slapd
+    state: restarted
+  listen: openldap config changed
+
+- name: restart telegraf
+  service:
+    name: telegraf
+    state: restarted
+  listen: telegraf config changed

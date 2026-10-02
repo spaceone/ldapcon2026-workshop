@@ -1,0 +1,222 @@
+# Copyright:
+#   2016-2022 by Michael Ströder <michael@stroeder.com>
+#   2025 by Ondřej Kuzník <okuznik@symas.com>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# define constants for some general regex prefixes
+const SLAPD_THREAD_OR_PROCESS /^.* (slapd\[(?P<pid>\d+)\]:|(?P<threadid>0x[0-9a-f]+)) /
+const SLAPD_CONN // + SLAPD_THREAD_OR_PROCESS + /conn=(?P<conn>\d+) /
+const SLAPD_OP // + SLAPD_CONN + /op=(?P<op>\d+)( | \[(|IP=[^ ]+)[ ]*(|NAME=[^ ]+)[ ]*(|USERNAME=[^ ]+)\] )/
+const SLAPD_FD // + SLAPD_CONN + /fd=(?P<fd>\d+) /
+
+# set timestamp from log
+#---------------------------------------------------------------------------
+
+gauge start_time
+gauge end_time
+
+# count RESULT lines with type (tag=) and LDAP result code (err=)
+#---------------------------------------------------------------------------
+
+histogram slapd_qtime buckets 0.001, 0.01, 0.1, 1.0, 10.0
+histogram slapd_result buckets 0.001, 0.01, 0.1, 1.0, 10.0 by tag, err
+histogram slapd_search_result_size buckets 1, 10, 100, 1000, 10000
+timer slapd_result_min by tag, err
+timer slapd_result_max by tag, err
+
+const SLAPD_RESULT // + SLAPD_OP + /.*RESULT tag=(?P<tag>\d+) (oid=(?P<oid>\d+) )*err=(?P<err>\d+) qtime=(?P<qtime>\d+\.\d+) etime=(?P<etime>\d+\.\d+) (nentries=(?P<nentries>\d+) )*text=.*$/
+
+// + SLAPD_RESULT {
+    slapd_qtime = $qtime
+
+    slapd_result[$tag, $err] = $etime - $qtime
+
+    $tag == "101" && $err == "0" {
+        slapd_search_result_size = $nentries
+    }
+
+    slapd_result_max[$tag, $err] < $etime {
+        slapd_result_max[$tag, $err] = $etime
+    }
+    # FIXME: unset values behave strangely (like zero but not really?),
+    # coercing them seems to help
+    float(slapd_result_min[$tag, $err]) <= 0 || slapd_result_min[$tag, $err] > $etime {
+        slapd_result_min[$tag, $err] = $etime
+    }
+}
+
+# count request lines
+#---------------------------------------------------------------------------
+
+counter slapd_req_count by rtype
+counter slapd_bind_method_count by method
+
+# SRCH requests cause two or more log lines, only count the first
+// + SLAPD_OP + /(?P<rtype>(SRCH)) base.*$/ {
+    slapd_req_count[$rtype]++
+}
+
+# BIND requests cause multiple log lines, only count the first
+// + SLAPD_OP + /(?P<rtype>(BIND)) dn=.* method=(?P<method>\d+)$/ {
+    slapd_req_count[$rtype]++
+    slapd_bind_method_count[$method]++
+}
+
+# MOD requests cause multiple log lines, only count the first
+// + SLAPD_OP + /(?P<rtype>(MOD)) dn=.*$/ {
+    slapd_req_count[$rtype]++
+}
+
+// + SLAPD_OP + /(?P<rtype>(UNBIND|ADD|MODRDN|DEL|EXT|WHOAMI|PASSMOD))(| .*)$/ {
+    slapd_req_count[$rtype]++
+}
+
+# count ACCEPT lines with source and destination address
+#---------------------------------------------------------------------------
+
+counter slapd_conn_count by src, dst
+
+const SLAPD_ACCEPT_FROM // + SLAPD_FD + /ACCEPT from /
+
+# count TCP/IP (LDAP and LDAPS) connections
+const SLAPD_ACCEPT_IP // + SLAPD_ACCEPT_FROM + /IP=(?P<src>.+):\d+ \(IP=(?P<dst>.+)\)$/
+
+// + SLAPD_ACCEPT_IP {
+    slapd_conn_count[$src, $dst]++
+}
+
+# count LDAPI connections
+const SLAPD_ACCEPT_PATH // + SLAPD_ACCEPT_FROM + /PATH=(?P<src>[^ ]+) \(PATH=(?P<dst>.+)\)$/
+
+// + SLAPD_ACCEPT_PATH {
+    slapd_conn_count["ldapi", $dst]++
+}
+
+# count "deferring" messages
+#---------------------------------------------------------------------------
+
+counter slapd_deferred_ops_count by defer_type
+
+const SLAPD_DEFERRING // + SLAPD_THREAD_OR_PROCESS + /connection_input: conn=(?P<conn>\d+) deferring operation: (?P<defer_type>.+)$/
+
+// + SLAPD_DEFERRING {
+    slapd_deferred_ops_count[$defer_type]++
+}
+
+# count syncrepl related events
+#
+histogram slapd_syncrepl_messages buckets 0.001, 0.01, 0.1, 1.0, 10.0 by rid, type, result
+counter slapd_syncrepl_results by rid, err, result
+
+const SLAPD_SYNCREPL // + SLAPD_THREAD_OR_PROCESS + /rid=(?P<rid>\d+) SYNC (?P<type>[^ ]+).*etime=(?P<etime>\d+\.\d+) result=(?P<result>[^ ]+)/
+
+// + SLAPD_SYNCREPL {
+    slapd_syncrepl_messages[$rid, $type, $result] = $etime
+    $type == "RESULT" {
+        /err=(?P<err>\d+)/ {
+            slapd_syncrepl_results[$rid, $err, $result]++
+        }
+    }
+}
+
+# count "do_syncrepl..retrying" messages
+#---------------------------------------------------------------------------
+
+counter slapd_syncrepl_retrying by rid, errno
+
+const SLAPD_SYNCREPL_RETRYING // + SLAPD_THREAD_OR_PROCESS + /do_syncrepl: rid=(?P<rid>\d+) rc -(?P<errno>\d+) retrying$/
+
+// + SLAPD_SYNCREPL_RETRYING {
+    slapd_syncrepl_retrying[$rid, $errno]++
+}
+
+# count "slap_client_connect..ldap_sasl_interactive_bind_s failed" messages
+#---------------------------------------------------------------------------
+
+counter slapd_syncrepl_bind_failed by uri, errno
+
+const SLAPD_SYNCREPL_BIND_FAILED // + SLAPD_THREAD_OR_PROCESS + /.* slap_client_connect: URI=(?P<uri>[^ ]+) ldap_sasl_interactive_bind_s failed \(-(?P<errno>\d+)\)$/
+
+// + SLAPD_SYNCREPL_BIND_FAILED {
+    slapd_syncrepl_bind_failed[$uri, $errno]++
+}
+
+# count different "closed" messages
+#---------------------------------------------------------------------------
+
+counter slapd_closed_count by close_type
+
+const SLAPD_CLOSED // + SLAPD_FD + /closed/
+
+// + SLAPD_CLOSED {
+    slapd_closed_count["normal"]++
+}
+
+// + SLAPD_CLOSED + / \(slapd shutdown\)$/ {
+    slapd_closed_count["shutdown"]++
+}
+
+// + SLAPD_CLOSED + / \(idletimeout\)$/ {
+    slapd_closed_count["idle"]++
+}
+
+// + SLAPD_CLOSED + / \(connection lost\)$/ {
+    slapd_closed_count["lost"]++
+}
+
+# count "expired password" messages
+#---------------------------------------------------------------------------
+
+counter slapd_ppolicy_expired
+
+const SLAPD_PPOLICY_EXPIRED_PASSWORD // + SLAPD_THREAD_OR_PROCESS + /ppolicy_bind: Entry [^ ]+ has an expired password: \d+ grace logins$/
+
+// + SLAPD_PPOLICY_EXPIRED_PASSWORD {
+    slapd_ppolicy_expired++
+}
+
+# count "TLS established" messages and extract protocol version and cipher
+#---------------------------------------------------------------------------
+
+counter slapd_tls_established by proto, cipher
+
+const SLAPD_TLS_ESTABLISHED // + SLAPD_FD + /TLS established tls_ssf=\d+ ssf=\d+ tls_proto=(?P<proto>.+) tls_cipher=(?P<cipher>.+)$/
+
+// + SLAPD_TLS_ESTABLISHED {
+    slapd_tls_established[$proto, $cipher]++
+}
+
+# count "TLS negotiation failure" messages
+#---------------------------------------------------------------------------
+
+counter slapd_tls_failure
+
+const SLAPD_TLS_FAILURE // + SLAPD_FD + /closed \(TLS negotiation failure\)$/
+
+// + SLAPD_TLS_FAILURE {
+    slapd_tls_failure++
+}
+
+# count known error conditions that should always be investigated
+#---------------------------------------------------------------------------
+
+counter slapd_error by context
+
+// + SLAPD_THREAD_OR_PROCESS + /do_syncrepl: rid=(?P<rid>\d+) delta-sync lost sync/ {
+    slapd_error["deltasync"]++
+}
+
+// + SLAPD_OP + /accesslog_[a-z_]*: got result 0x[0-9a-f]* adding/ {
+    slapd_error["accesslog"]++
+}

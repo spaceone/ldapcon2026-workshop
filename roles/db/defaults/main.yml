@@ -1,0 +1,14 @@
+repo_key: "https://repo.symas.com/repo/gpg/RPM-GPG-KEY-symas-com-signing-key"
+openldap_repo: "test/testing27"
+openldap_extras: "main/release-extras"
+openldap_role: "{{ ['database', 'balancer', 'replica'] | select('in', group_names) | first }}"
+subject_dn: 'cn={{ (inventory_hostname | split("."))[0] }},ou=hosts,{{ suffix }}'
+
+# How far the password policy workshop has got: 0 is the morning of the
+# workshop, 8 is "it went fine".  Picks the ppolicy configuration
+# (templates/workshop/ppolicy.conf.j2) and the policy entries loaded by a
+# rebuild (templates/workshop/20-policies.ldif.j2).  The replica
+# replicates throughout; at 8 it starts chaining its policy writes to
+# the provider.
+ppolicy_stages_done: 0
+ppm_module: /opt/symas/lib/openldap/ppm.so

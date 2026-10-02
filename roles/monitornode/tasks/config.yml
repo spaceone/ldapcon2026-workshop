@@ -1,0 +1,75 @@
+- name: Set facts for openldap hosts
+  set_fact:
+    notify: openldap
+    config_file: '/opt/symas/etc/openldap/slapd.conf'
+
+- name: Grant the openldap group read access to the TLS files
+  become: true
+  ansible.posix.acl:
+    path: "{{ item }}"
+    entity: openldap
+    etype: group
+    permissions: r
+    state: present
+  loop:
+    - "/opt/symas/ssl/{{ inventory_hostname }}.key"
+    - "/opt/symas/ssl/ca.crt"
+
+- name: Configure telegraf
+  block:
+    - name: allow prometheus (dtms) hosts to access telegraf port (doesn't work on SUSE)
+      firewalld:
+        zone: public
+        rich_rule: 'rule family="ipv4" source address="{{ hostvars[item].ansible_host }}" port protocol="tcp" port="9100" accept'
+        permanent: yes
+        immediate: yes
+        state: enabled
+      loop: "{{ groups['monitor'] }}"
+      tags: never
+    - name: allow prometheus to access telegraf port
+      ansible.posix.firewalld:
+        port: 9100/tcp
+        permanent: true
+        immediate: true
+        zone: public
+        state: enabled
+      tags: [ firewall ]
+    - name: create telegraf dirs
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: telegraf
+        group: telegraf
+      loop:
+        - /etc/telegraf
+        - /etc/telegraf/telegraf.d
+        - /var/log/telegraf
+      tags: conf
+    - name: telegraf properties
+      template:
+        src: '{{ item.0 }}'
+        dest: '{{ item.1 }}'
+        owner: telegraf
+        group: telegraf
+      with_together:
+        - [ 'telegraf.j2', 'output-prometheus.j2', 'input-openldap.j2', 'input-system.j2' ]
+        - [ '/etc/telegraf/telegraf.conf', '/etc/telegraf/telegraf.d/output-prometheus.conf', '/etc/telegraf/telegraf.d/input-openldap.conf', '/etc/telegraf/telegraf.d/input-system.conf' ]
+      notify: telegraf config changed
+      tags: conf
+    - getent:
+        database: passwd
+      tags: [ authz ]
+    - name: allow telegraf to connect to slapd over local sockets
+      lineinfile:
+        insertafter: '^[#\s]*map local socket connections:'
+        path: '{{ config_file }}'
+        line: "authz-regexp \"gidNumber={{ getent_passwd['telegraf'].2 }}\\\\+uidNumber={{ getent_passwd['telegraf'].1 }},cn=peercred,cn=external,cn=auth\" \"{{ suffix }}\""
+      notify: '{{ notify }} config changed'
+      tags: [ authz ]
+    - name: add telegraf user to openldap group
+      become: true
+      ansible.builtin.user:
+        name: telegraf
+        groups: openldap
+        append: true
+  tags: [ telegraf_conf ]

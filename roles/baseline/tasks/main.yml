@@ -1,0 +1,78 @@
+- name: Is cloud init enabled?
+  stat:
+    path: /run/cloud-init/enabled
+  register: cloud_init_enabled
+
+- name: Read cloud-init data
+  slurp:
+    src: /run/cloud-init/instance-data-sensitive.json
+  register: cloud_init_data
+  when: cloud_init_enabled.stat.exists
+
+- name: Export cloud-init data as facts
+  set_fact:
+    cloud_init: '{{ cloud_init_data.content | b64decode | from_json }}'
+  when: cloud_init_enabled.stat.exists
+
+- name: Distro baseline
+  include_tasks: '{{ ansible_facts.os_family }}.yml'
+
+- name: Packages
+  package:
+    name:
+      - etckeeper
+      - fail2ban
+      - firewalld
+      - git
+      - patch
+      - rsync # synchronize
+      - sudo
+      - tar
+      - tmux
+    state: present
+
+- name: Set up etckeeper if packages didn't
+  command:
+    argv:
+      - etckeeper
+      - init
+    creates: /etc/.git
+
+- name: Ensure etckeeper.timer is enabled
+  systemd:
+    name: etckeeper.timer
+    enabled: yes
+    state: started
+    masked: no
+
+- name: Ensure firewalld is running
+  systemd:
+    name: firewalld
+    enabled: yes
+    state: started
+    masked: no
+
+- name: Allow ssh first to prevent lockout
+  firewalld:
+    service: ssh
+    permanent: yes
+    zone: public
+    immediate: yes
+    state: enabled
+
+- name: Chrony is installed
+  package:
+    name:
+      - chrony
+    state: latest
+
+- name: Chrony is enabled
+  systemd:
+    name: '{{ chrony_service }}'
+    enabled: yes
+    state: started
+    masked: no
+
+- name: Set hostname
+  hostname:
+    name: '{{ external_hostname | default(inventory_hostname) }}'

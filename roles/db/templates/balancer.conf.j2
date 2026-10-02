@@ -1,0 +1,115 @@
+# Workshop balancer slapd.conf
+{% macro replica_tier() %}
+{% for name in groups.replica %}
+{% if loop.first %}
+tier roundrobin
+{% endif %}
+# capacity: 5x5=25 concurrent ops + 10 binds each
+backend-server uri=ldaps://{{name}} retry=5000
+    numconns=5 conn-max-pending=5
+    bindconns=10
+
+{% endfor %}
+{% endmacro %}
+
+include    /opt/symas/etc/openldap/schema/core.schema
+include    /opt/symas/etc/openldap/schema/cosine.schema
+
+modulepath /opt/symas/lib/openldap
+moduleload pw-sha2
+moduleload lloadd
+
+# SSL Configuration
+TLSCertificateFile    /opt/symas/ssl/letsencrypt/fullchain.pem
+TLSCertificateKeyFile /opt/symas/ssl/letsencrypt/privkey.pem
+# The CA trusted to issue client certs != tls_cacertdir=/etc/ssl/certs/
+TLSCACertificateFile  /opt/symas/ssl/ca.crt
+TLSCipherSuite HIGH:MEDIUM:!ADH
+TLSProtocolMin 3.1
+TLSVerifyClient allow
+
+loglevel       stats
+logfile        /var/log/slapd/slapd.log
+logfile-format rfc3339-utc
+logfile-only   on
+logfile-rotate 15 1000 24
+
+require LDAPv3
+idletimeout 0
+writetimeout 30
+sizelimit 2000
+timelimit 60
+threads 16
+gentlehup on
+pidfile /var/symas/run/slapd.pid
+argsfile /var/symas/run/slapd.args
+disallow bind_anon
+require authc
+
+password-hash {SSHA512}
+
+#######################################################################
+# Balancer settings
+#######################################################################
+
+backend lload
+listen "ldaps:///"
+feature proxyauthz
+TLSShareSlapdCTX yes
+
+restrict_control 1.2.840.113556.1.4.319 connection
+
+# client cert, our identity and other common settings go here
+bindconf bindmethod=sasl saslmech=EXTERNAL binddn="{{ subject_dn }}"
+    timeout=5 network-timeout=5 tcp-user-timeout=5000 keepalive=180:10:30
+    tls_cert="/opt/symas/ssl/{{ inventory_hostname }}.crt"
+    tls_key="/opt/symas/ssl/{{ inventory_hostname }}.key"
+    tls_reqcert=demand tls_cacertdir=/etc/ssl/certs/
+
+{% if ppolicy_stages_done | int >= 8 %}
+# Replicas go in the same tier
+{{ replica_tier() }}
+{% endif %}
+
+# put providers in separate tiers for a primary/fallback setup
+{% for name in groups.database %}
+tier roundrobin
+# capacity: 5x5=25 concurrent ops + 10 binds
+backend-server uri=ldaps://{{name}} retry=5000
+    numconns=5 conn-max-pending=5
+    bindconns=10
+
+{% endfor %}
+{% if ppolicy_stages_done | int < 8 %}
+# Until the password policy workshop reveals the replicas (stage 8)
+# they are only a fallback: they keep policy writes to themselves until
+# then, so ordinary traffic belongs on the provider.
+{{ replica_tier() }}
+{% endif %}
+
+#######################################################################
+# Frontend
+#######################################################################
+
+# ACLS:
+
+# root accessing the ldapi socket should have rootdn privs
+authz-regexp gidNumber=0\\\+uidNumber=0,cn=peercred,cn=external,cn=auth {{ suffix }}
+authz-regexp gidNumber=997\\\+uidNumber=997,cn=peercred,cn=external,cn=auth cn=monitoruser,ou=administrators,{{ suffix }}
+
+# Global ACLs
+access to dn.base=""
+  by * read
+
+access to dn.subtree="cn=subschema"
+  by * read
+
+#######################################################################
+# Monitor database
+#######################################################################
+database monitor
+
+access to *
+  by dn.exact="cn=monitoruser,ou=administrators,{{ suffix }}" read
+  by dn.exact="{{ suffix }}" write
+  by * none

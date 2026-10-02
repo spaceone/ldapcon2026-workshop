@@ -1,0 +1,3 @@
+letsencrypt_contact: 'user@example.com'
+letsencrypt_domains:
+  - '{{ external_hostname | default(inventory_hostname) }}'

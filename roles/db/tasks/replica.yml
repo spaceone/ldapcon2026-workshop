@@ -1,0 +1,35 @@
+- name: slapd.conf
+  template:
+    src: replica.conf.j2
+    dest: /etc/opt/symas/slapd.conf
+    mode: "0600"
+    owner: openldap
+  notify: restart slapd
+
+- name: Create directories
+  file:
+    path: "/var/symas/openldap-data/{{ suffix }}"
+    state: directory
+    owner: openldap
+    group: openldap
+    mode: "0700"
+
+# It replicates what provider has so just wipe
+- name: Reset the replica
+  block:
+    - name: Stop slapd
+      service:
+        name: symas-openldap-server
+        state: stopped
+    - name: wipe DB
+      file:
+        path: "/var/symas/openldap-data/{{ suffix }}/data.mdb"
+        state: absent
+    - name: Start slapd
+      service:
+        name: symas-openldap-server
+        state: started
+  when: rebuild | default(False) | bool
+
+- name: Apply pending changes
+  meta: flush_handlers

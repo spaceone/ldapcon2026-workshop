@@ -1,0 +1,18 @@
+suffix: 'dc=example,dc=com'
+ca_host: '{{ groups.ca | first }}'
+has_deb822: '{{
+  ( ansible_facts.distribution == "Debian" and
+    ansible_facts.distribution_major_version is version("13", "ge") )
+  or
+  ( ansible_facts.distribution == "Ubuntu" and
+    ansible_facts.distribution_major_version is version("24", "ge") ) }}'
+
+test_mode: false # omit certain tasks that take ages to finish (e.g. customer uploaded data sync) and make sure no emails leave the system
+ansible_ssh_extra_args: '-o UserKnownHostsFile=./.ansible_known_hosts'
+
+config_path: '/opt/symas/etc/openldap'
+rootpw: '{{ lookup("password", "secrets/rootpw") }}'
+# TODO: Use ca/defaults/main.yml
+cacert_path: '/opt/symas/ssl/ca.crt'
+
+letsencrypt_path: 'letsencrypt/ldapcon2026.symas.net/'

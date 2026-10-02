@@ -1,0 +1,82 @@
+{% from '_time.j2' import ago -%}
+# Administrators, service accounts and machine accounts.
+#
+# These matter because they are exactly the accounts that must NOT be
+# treated like people: a service account whose password expires at
+# 3am on a Sunday is an outage.  Stage 5 is where they stop sharing a
+# policy with the humans.
+
+dn: uid=admin,ou=administrators,{{ suffix }}
+objectClass: inetOrgPerson
+uid: admin
+cn: Directory Administrator
+sn: Administrator
+userPassword: {SSHA}J7HDdQVu71TOylej6ZvLGN0QZ6tFGs9F
+pwdChangedTime: {{ ago(days=10) }}
+
+# Reads everything, writes nothing. Stage 8 gives it a consumer to feed.
+dn: uid=replicator,ou=administrators,{{ suffix }}
+objectClass: inetOrgPerson
+uid: replicator
+cn: Replication account
+sn: replicator
+userPassword: {SSHA}mQXtFEk0mygyGXhtGFjBn52PS1WXbR1h
+pwdChangedTime: {{ ago(days=10) }}
+
+# Used by the consumer's chain overlay in stage 8 to write password
+# policy state back to the provider. In cn=ldapadmins, so the existing
+# ACL already lets it write pwdFailureTime and friends.
+dn: uid=updater,ou=administrators,{{ suffix }}
+objectClass: inetOrgPerson
+uid: updater
+cn: Chained update account
+sn: updater
+userPassword: {SSHA}UEfpm56xj+D8YtSIxa2CiCsRXco61QN/
+pwdChangedTime: {{ ago(days=10) }}
+
+dn: uid=ssp,ou=applications,{{ suffix }}
+objectClass: inetOrgPerson
+uid: ssp
+cn: Self Service Password portal
+sn: ssp
+description: Resets passwords on behalf of users who forgot theirs.
+userPassword: {SSHA}Zrmh9roKoREw335/qB+b6ew2hmIJTte/
+pwdChangedTime: {{ ago(days=300) }}
+
+dn: uid=jmeter,ou=applications,{{ suffix }}
+objectClass: inetOrgPerson
+uid: jmeter
+cn: Load testing rig
+sn: jmeter
+description: Binds thousands of times a minute. Must never be locked out.
+userPassword: {SSHA}Bhx91G0t5Hy52yJ9si8rAADg1X1Cr9Ot
+{# No pwdChangedTime: on the real machines this is the account the load
+   generator binds as, so it must keep working however far the
+   workshop gets.  The role also gives it a second password, the one
+   the load generator is configured with. #}
+{% if jmeter_password_hash is defined %}
+userPassword: {{ jmeter_password_hash }}
+{% endif %}
+
+dn: uid=backup,ou=applications,{{ suffix }}
+objectClass: inetOrgPerson
+uid: backup
+cn: Backup agent
+sn: backup
+userPassword: {SSHA}LC34PGO0qOeRpI5HqVNkHlelZfJg5oXw
+pwdChangedTime: {{ ago(days=380) }}
+
+dn: cn=web01,ou=hosts,{{ suffix }}
+objectClass: device
+objectClass: simpleSecurityObject
+cn: web01
+description: sssd on a web server, reads posix data.
+userPassword: {SSHA}fXDJJKnQDzSXRxxkgAhUEL362MEatk8j
+pwdChangedTime: {{ ago(days=500) }}
+
+dn: cn=db01,ou=hosts,{{ suffix }}
+objectClass: device
+objectClass: simpleSecurityObject
+cn: db01
+userPassword: {SSHA}jcEkpXMoYOFwmNqyeE5Z0zcKVFg/fukZ
+pwdChangedTime: {{ ago(days=500) }}

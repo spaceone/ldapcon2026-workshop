@@ -1,0 +1,11 @@
+#!/bin/bash
+
+/usr/bin/mkdir -p /opt/symas/ssl/letsencrypt/
+#/usr/bin/cp -Lr /etc/letsencrypt/live/*/ /opt/symas/ssl/letsencrypt/
+# modified for ldapcon wildcard cert:
+/usr/bin/cp -Lr /etc/letsencrypt/* /opt/symas/ssl/letsencrypt/
+/usr/bin/chown -R openldap: /opt/symas/ssl/letsencrypt/
+# Service might not be running (yet), nothing to do if so.
+if /usr/bin/systemctl is-active --quiet symas-openldap-server; then
+    /usr/bin/systemctl restart symas-openldap-server
+fi

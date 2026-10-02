@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (c) 2026 by Symas Corporation. -->
+<Configuration>
+    <Properties>
+        <Property name="LOG_DIR">/var/log</Property>
+        <Property name="LOG_FILE">${LOG_DIR}/loadtest.log</Property>
+    </Properties>
+    <Appenders>
+        <RollingFile name="file"
+                     fileName="${LOG_FILE}"
+                     filePattern="${LOG_DIR}/ldap-load-gen-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5p %c{1}:%L - %m%n"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="10MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="10"/>
+        </RollingFile>
+        <Console name="console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5p %c{1}:%L - %m%n"/>
+        </Console>
+    </Appenders>
+    <Loggers>
+        <Logger name="com.symas" level="info"/>
+        <Logger name="org.apache.directory.api" level="warn"/>
+        <Logger name="org.apache.directory.fortress.core" level="info"/>
+        <Logger name="org.apache.jmeter.reporters.Summariser" level="info" additivity="false">
+            <AppenderRef ref="console"/>
+            <AppenderRef ref="file"/>
+        </Logger>
+        <Root level="warn">
+            <AppenderRef ref="console"/>
+            <AppenderRef ref="file"/>
+        </Root>
+    </Loggers>
+</Configuration>

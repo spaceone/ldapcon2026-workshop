@@ -1,0 +1,25 @@
+{% from '_time.j2' import ago -%}
+# Partner accounts.  Held to a stricter standard than staff: they get a
+# shorter maximum age and a harder lockout in stage 5.
+#
+# trent has already left -- his account is disabled the honest way,
+# with pwdEndTime, rather than by deleting his password and hoping.
+
+dn: uid=trent,ou=external,{{ suffix }}
+objectClass: inetOrgPerson
+uid: trent
+cn: Trent Thompson
+sn: Thompson
+mail: trent@partner.example.net
+userPassword: {SSHA}iwBICb53DHF9hJcSBUlRjleO/5swlV2O
+pwdChangedTime: {{ ago(days=120) }}
+pwdEndTime: {{ ago(days=14) }}
+
+dn: uid=victor,ou=external,{{ suffix }}
+objectClass: inetOrgPerson
+uid: victor
+cn: Victor Vargas
+sn: Vargas
+mail: victor@partner.example.net
+userPassword: {SSHA}jkbhEFZQOWzVpbDUzjYt9cQqjhdHdIbY
+pwdChangedTime: {{ ago(days=20) }}

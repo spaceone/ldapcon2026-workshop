@@ -1,0 +1,103 @@
+- name: Upload schemas
+  copy:
+    src: "{{ item }}"
+    dest: "/opt/symas/etc/openldap/schema/{{ item | basename }}"
+  with_fileglob:
+    - schema/*
+
+- name: slapd.conf
+  template:
+    src: slapd.conf.j2
+    dest: /etc/opt/symas/slapd.conf
+    mode: "0600"
+    owner: openldap
+  notify: restart slapd
+
+- name: Create directories
+  file:
+    path: "/var/symas/openldap-data/{{ item }}"
+    state: directory
+    owner: openldap
+    group: openldap
+    mode: "0700"
+  loop:
+    - "{{ suffix }}"
+    - "cn=accesslog"
+
+- name: Restore DB
+  block:
+    - name: Stop slapd
+      service:
+        name: symas-openldap-server
+        state: stopped
+    - name: wipe DB
+      file:
+        path: "/var/symas/openldap-data/{{ suffix }}/data.mdb"
+        state: absent
+    - name: wipe accesslog
+      file:
+        path: "/var/symas/openldap-data/cn=accesslog/data.mdb"
+        state: absent
+    - name: Load data
+      block:
+      - name: Generate password hash
+        ansible.builtin.command:
+          argv:
+            - /opt/symas/sbin/slappasswd
+            - '-h'
+            - '{SSHA}'
+            - '-s'
+            - "{{ rootpw }}"
+        register: password_hash
+        changed_when: false
+        no_log: true
+        run_once: true
+        when: rootpw is defined
+      - name: Seed staging directory, empty
+        file:
+          path: /var/symas/openldap-data/seed
+          state: "{{ item }}"
+          mode: "0700"
+        loop: [absent, directory]
+      - name: Render the seed
+        template:
+          src: "{{ item }}"
+          dest: "/var/symas/openldap-data/seed/{{ item | basename | regex_replace('\\.j2$', '') }}"
+          mode: "0600"
+        loop: "{{ query('fileglob', role_path ~ '/templates/workshop/[0-9]*.ldif.j2') | sort }}"
+        vars:
+          jmeter_password_hash: "{{ password_hash.stdout }}"
+        no_log: true
+      - name: Join the seed into one LDIF
+        assemble:
+          src: /var/symas/openldap-data/seed
+          dest: /var/symas/openldap-data/bootstrap.ldif
+          delimiter: "\n"
+          owner: openldap
+          group: openldap
+          mode: "0600"
+      - name: Load data
+        command:
+          argv:
+            - /opt/symas/sbin/slapadd
+            - '-b'
+            - '{{ suffix }}'
+            - '-l'
+            - '/var/symas/openldap-data/bootstrap.ldif'
+        become_user: openldap
+        become: yes
+      - name: Remove seed again
+        file:
+          path: /var/symas/openldap-data/seed
+          state: absent
+      when: openldap_serverid == 1
+    - name: Start slapd
+      service:
+        name: symas-openldap-server
+        state: started
+  when: rebuild | default(False) | bool
+
+# Need latest DB up and running so that we can send operations to it
+- name: Apply pending changes
+  meta: flush_handlers
+

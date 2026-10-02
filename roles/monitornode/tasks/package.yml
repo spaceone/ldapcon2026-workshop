@@ -1,0 +1,46 @@
+- name: install ancillary pckgs
+  ansible.builtin.package:
+    name:
+      - unzip
+      - acl
+      - gnupg
+    state: latest
+  tags: [install_telegraf]
+
+- name: Install telegraf
+  block:
+    - name: Retrieve telegraf signing key
+      get_url:
+        url: https://repos.influxdata.com/influxdata-archive.key
+        dest: /etc/apt/keyrings/influx-key.asc
+      tags: testkey
+    - name: Set up telgraf repo
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [signed-by=/etc/apt/keyrings/influx-key.asc]
+          https://repos.influxdata.com/debian stable main
+        filename: telegraf
+        state: present
+        update_cache: true
+    - name: Install Telegraf
+      become: true
+      ansible.builtin.apt:
+        name: telegraf
+        state: present
+      tags: [install_telegraf]
+    - name: telegraf env
+      template:
+        src: telegraf-env.j2
+        dest: '/etc/default/telegraf'
+    - name: add systemd telegraf.service
+      template:
+        src: telegraf-service.j2
+        dest: /etc/systemd/system/telegraf.service
+    - name: enable telegraf service
+      systemd:
+        name: 'telegraf'
+        enabled: yes
+        daemon_reload: true
+        masked: no
+      notify: telegraf config changed
+  tags: [install_telegraf]

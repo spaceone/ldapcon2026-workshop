@@ -1,0 +1,171 @@
+# Workshop replica slapd.conf
+{% set chaining = ppolicy_stages_done | int >= 8 %}
+{% set provider = groups.database | first %}
+serverId {{ openldap_serverid }}
+
+include    /opt/symas/etc/openldap/schema/core.schema
+include    /opt/symas/etc/openldap/schema/cosine.schema
+include    /opt/symas/etc/openldap/schema/inetorgperson.schema
+include    /opt/symas/etc/openldap/schema/rfc2307bis.schema
+include    /opt/symas/etc/openldap/schema/openldap.schema
+include    /opt/symas/etc/openldap/schema/dyngroup.schema
+include    /opt/symas/etc/openldap/schema/namedobject.schema
+
+modulepath /opt/symas/lib/openldap
+moduleload back_mdb
+moduleload ppolicy
+moduleload argon2
+moduleload pw-sha2
+{% if chaining %}
+moduleload back_ldap
+{% endif %}
+
+# SSL Configuration
+TLSCertificateFile    /opt/symas/ssl/letsencrypt/fullchain.pem
+TLSCertificateKeyFile /opt/symas/ssl/letsencrypt/privkey.pem
+# The CA trusted to issue client certs != tls_cacertdir=/etc/ssl/certs/
+TLSCACertificateFile  /opt/symas/ssl/ca.crt
+TLSCipherSuite HIGH:MEDIUM:!ADH
+TLSProtocolMin 3.1
+TLSVerifyClient allow
+
+loglevel       stats sync
+logfile        /var/log/slapd/slapd.log
+logfile-format rfc3339-utc
+logfile-only   on
+logfile-rotate 15 1000 24
+
+require LDAPv3
+idletimeout 0
+writetimeout 30
+sizelimit 2000
+timelimit 60
+threads 16
+gentlehup on
+pidfile /var/symas/run/slapd.pid
+argsfile /var/symas/run/slapd.args
+
+password-hash {SSHA}
+
+sortvals member
+
+# root accessing the ldapi socket should have rootdn privs
+authz-regexp gidNumber=0\\\+uidNumber=0,cn=peercred,cn=external,cn=auth {{ suffix }}
+authz-regexp gidNumber=997\\\+uidNumber=997,cn=peercred,cn=external,cn=auth cn=monitoruser,ou=administrators,{{ suffix }}
+
+# Global ACLs
+access to dn.base=""
+  by * read
+
+access to dn.subtree="cn=subschema"
+  by * read
+{% if chaining %}
+
+#######################################################################
+# Follow referrals back to the provider instead of returning them.
+#######################################################################
+# Stage 8.  Use the identity that has manage access to the required attributes
+# for effective ppolicy forwarding
+overlay     chain
+chain-uri               "ldaps://{{ provider }}/"
+chain-idassert-bind     bindmethod=simple
+                        binddn="uid=updater,ou=administrators,{{ suffix }}"
+                        credentials="updater-pw"
+                        mode=none
+                        tls_reqcert=demand
+                        tls_cacertdir=/etc/ssl/certs/
+chain-return-error      TRUE
+{% endif %}
+
+#######################################################################
+# The configuration database
+#######################################################################
+database    config
+rootdn      "cn=config"
+
+access to *
+    by dn.exact="{{ suffix }}" manage
+    by * none
+
+#######################################################################
+# Default DB Settings
+#######################################################################
+database  mdb
+maxreaders 64
+maxsize 4294967296
+suffix  "{{ suffix }}"
+rootdn  "{{ suffix }}"
+
+directory "/var/symas/openldap-data/{{ suffix }}"
+
+# A read-only copy of the provider.
+syncrepl rid={{hostvars[provider].openldap_serverid}} provider=ldaps://{{provider}}
+  searchbase="{{ suffix }}"
+  type=refreshAndPersist schemachecking=on network-timeout=30
+  tcp-user-timeout=5000 keepalive=180:10:30 retry="5 5 30 +"
+  bindmethod=sasl saslmech=EXTERNAL
+  tls_reqcert=demand tls_cacertdir=/etc/ssl/certs/
+  tls_cert=/opt/symas/ssl/{{inventory_hostname}}.crt
+  tls_key=/opt/symas/ssl/{{inventory_hostname}}.key
+  syncdata=accesslog logbase=cn=accesslog
+  logfilter="(&(objectclass=auditWriteObject)(reqresult=0))"
+
+# Anything that tries to write here is told where the writable copy is.
+updateref "ldaps://{{ provider }}/"
+
+#### ACLs #############################################################
+# Essentially same as provider
+
+access to *
+    by dn.exact="uid=jmeter,ou=applications,{{ suffix }}" write
+    by * break
+
+access to attrs=userPassword
+    by self =wx
+    by group/groupOfMembers/member="cn=ldapadmins,ou=groups,{{ suffix }}" =w
+    by anonymous auth
+    by * none
+
+access to attrs=pwdChangedTime,pwdAccountLockedTime,pwdFailureTime,pwdHistory,pwdGraceUseTime,pwdReset,pwdStartTime,pwdEndTime,pwdLastSuccess,pwdAccountTmpLockoutEnd
+    by group/groupOfMembers/member="cn=ldapadmins,ou=groups,{{ suffix }}" write
+    by * none
+
+access to attrs=pwdPolicySubentry
+    by users read
+    by * none
+
+access to dn.subtree="ou=policies,{{ suffix }}"
+    by group/groupOfMembers/member="cn=ldapadmins,ou=groups,{{ suffix }}" write
+    by users read
+    by * none
+
+access to *
+    by group/groupOfMembers/member="cn=ldapadmins,ou=groups,{{ suffix }}" write
+    by self read
+    by users read
+    by * none
+
+#### ACLs end #########################################################
+
+index uidNumber,gidNumber,objectclass eq
+index cn,sn,givenName,telephoneNumber,mail eq,sub
+index uid,ou eq,sub
+index member,uniqueMember,owner,seeAlso eq
+index entryCSN,entryUUID eq
+
+#######################################################################
+# Password policy: the same as the provider's, with its writes sent
+# upstream from stage 8.
+#######################################################################
+{% set ppolicy_replica = true %}
+{% include 'workshop/ppolicy.conf.j2' %}
+
+#######################################################################
+# Monitor database
+#######################################################################
+database monitor
+
+access to *
+  by dn.exact="cn=monitoruser,ou=administrators,{{ suffix }}" read
+  by dn.exact="{{ suffix }}" write
+  by * none

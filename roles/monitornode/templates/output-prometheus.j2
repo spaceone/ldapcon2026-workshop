@@ -1,0 +1,14 @@
+###############################################################################
+# OUTPUT to Prometheus (security enabled)                                     #
+###############################################################################
+[[outputs.prometheus_client]]
+# /metrics exposed by default
+  listen = ":9100"
+  # Enable TLS with the given cert:
+  tls_cert = "/opt/symas/ssl/{{ inventory_hostname }}.crt"
+  tls_key  = "/opt/symas/ssl/{{ inventory_hostname }}.key"
+  # Set one or more allowed client CA certs to enable mutually authN TLS conns:
+  tls_allowed_cacerts = ["{{ cacert_path }}"]
+# Or, use basic authN instead:
+#  basic_username = "myuser"
+#  basic_password = "mypassword"

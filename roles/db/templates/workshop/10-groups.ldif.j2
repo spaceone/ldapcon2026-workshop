@@ -1,0 +1,23 @@
+# Membership in cn=ldapadmins is what the seed ACLs key off.
+dn: cn=ldapadmins,ou=groups,{{ suffix }}
+objectClass: groupOfMembers
+cn: ldapadmins
+description: Full administrative access to the directory.
+member: uid=admin,ou=administrators,{{ suffix }}
+member: uid=updater,ou=administrators,{{ suffix }}
+member: uid=grace,ou=people,{{ suffix }}
+
+dn: cn=oncall,ou=groups,{{ suffix }}
+objectClass: groupOfMembers
+cn: oncall
+description: Carry the pager. Stage 4 gives them a stricter policy.
+member: uid=grace,ou=people,{{ suffix }}
+member: uid=dave,ou=people,{{ suffix }}
+
+dn: cn=staff,ou=groups,{{ suffix }}
+objectClass: groupOfMembers
+cn: staff
+member: uid=alice,ou=people,{{ suffix }}
+member: uid=bob,ou=people,{{ suffix }}
+member: uid=carol,ou=people,{{ suffix }}
+member: uid=peggy,ou=people,{{ suffix }}

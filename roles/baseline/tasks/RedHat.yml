@@ -1,0 +1,24 @@
+- name: install common packages (RHEL)
+  ansible.builtin.package:
+    name:
+      - yum-utils
+      - epel-release
+      - dnf-automatic
+    state: latest
+
+- name: System update (RHEL)
+  dnf:
+    name: '*'
+    state: latest
+
+- name: Configure automatic updates
+  copy:
+    src: dnf-automatic.conf
+    dest: /etc/dnf/automatic.conf
+
+- name: Enable automatic updates
+  systemd:
+    name: dnf-automatic.timer
+    enabled: yes
+    state: started
+    masked: no

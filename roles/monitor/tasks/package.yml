@@ -1,0 +1,185 @@
+- name: Install Grafana
+  block:
+    - name: add Grafana RHEL Repo
+      blockinfile:
+        path: /etc/yum.repos.d/grafana.repo
+        create: yes
+        block: |
+          [grafana]
+          name=grafana
+          baseurl=https://rpm.grafana.com
+          repo_gpgcheck=1
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://rpm.grafana.com/gpg.key
+      when: ansible_os_family == "RedHat"
+    - name: add Grafana Deb Repo
+      block:
+        - name: Ensure gpg is installed
+          apt:
+            name: gpg
+            state: present
+            update_cache: yes
+        - name: Add Grafana GPG key
+          apt_key:
+            url: "https://apt.grafana.com/gpg.key"
+            state: present
+        - name: Add Grafana APT repository
+          apt_repository:
+            repo: "deb https://apt.grafana.com stable main"
+            state: present
+            filename: grafana
+        - name: Update APT cache
+          apt:
+            update_cache: yes
+      when: ansible_os_family == "Debian"
+      tags: never
+    - name: install Grafana package
+      block:
+        - name: Ensure prerequisites are installed
+          ansible.builtin.apt:
+            name:
+              - gpg
+              - ca-certificates
+            state: present
+            update_cache: yes
+        - name: Ensure keyring directory exists
+          ansible.builtin.file:
+            path: /etc/apt/keyrings
+            state: directory
+            mode: "0755"
+        - name: Download Grafana repository key (dearmored)
+          ansible.builtin.get_url:
+            url: https://apt.grafana.com/gpg.key
+            dest: /tmp/grafana.gpg.key
+            mode: "0644"
+        - name: Convert Grafana key to keyring format
+          ansible.builtin.command:
+            cmd: gpg --dearmor --yes --output /etc/apt/keyrings/grafana.gpg /tmp/grafana.gpg.key
+          changed_when: true
+        - name: Add Grafana APT repository (signed-by keyring)
+          ansible.builtin.apt_repository:
+            repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
+            state: present
+            filename: grafana
+        - name: Update APT cache
+          ansible.builtin.apt:
+            update_cache: yes
+      when: ansible_os_family == "Debian"
+    - name: install Grafana
+      ansible.builtin.package:
+        name:
+          - grafana
+        state: latest
+    - name: enable grafana service
+      systemd:
+        name: 'grafana-server'
+        enabled: yes
+        daemon_reload: true
+        masked: no
+  tags: [ grafana, grafana_install ]
+
+- name: Install Prometheus
+  block:
+    - name: install version
+      ansible.builtin.set_fact:
+        prometheus_version: '3.13.3'
+    - name: create prometheus group
+      ansible.builtin.group:
+        name: prometheus
+        state: present
+    - name: create prometheus user
+      user:
+        name: prometheus
+        create_home: no
+        group: prometheus
+        groups: openldap
+        state: present
+    - name: generate prometheus cert
+      ansible.builtin.include_role:
+        name: ca
+        tasks_from: cert
+      vars:
+        privatekey_owner: prometheus
+        privatekey_group: prometheus
+    - name: download prometheus
+      ansible.builtin.get_url:
+        url: 'https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz'
+        dest: /opt
+    - name: extract into /opt/prometheus
+      ansible.builtin.unarchive:
+        src: '/opt/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz'
+        dest: /opt
+        remote_src: true
+    - name: install prometheus binaries
+      ansible.builtin.copy:
+        src: '/opt/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}'
+        dest: /usr/local/bin
+        remote_src: yes
+        owner: prometheus
+        group: prometheus
+        mode: u=rx,g=r,o=r
+      loop:
+        - prometheus
+        - promtool
+    - name: add systemd prometheus.service
+      template:
+        src: prometheus.service.j2
+        dest: /usr/lib/systemd/system/prometheus.service
+    - name: enable prometheus service
+      systemd:
+        name: 'prometheus'
+        enabled: yes
+        daemon_reload: true
+        masked: no
+      notify: prometheus config changed
+  tags: [ prometheus, prometheus_install ]
+
+- name: Install Alert Manager
+  block:
+    - name: install version
+      ansible.builtin.set_fact:
+        alertmanager_version: '0.28.1'
+    - name: create alert manager group
+      ansible.builtin.group:
+        name: alertmanager
+        state: present
+    - name: create alert manager user
+      user:
+        name: alertmanager
+        create_home: no
+        group: alertmanager
+        groups: openldap
+        state: present
+    - name: download alert manager
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus/alertmanager/releases/download/v{{ alertmanager_version }}/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+        dest: /opt
+    - name: extract into /opt/alertmanager
+      ansible.builtin.unarchive:
+        src: '/opt/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz'
+        dest: /opt
+        remote_src: true
+    - name: install alert manager binaries
+      ansible.builtin.copy:
+        src: '/opt/alertmanager-{{ alertmanager_version }}.linux-amd64/{{ item }}'
+        dest: /usr/local/bin
+        remote_src: yes
+        owner: alertmanager
+        group: alertmanager
+        mode: u=rx,g=r,o=r
+      loop:
+        - alertmanager
+        - amtool
+    - name: add systemd alertmanager.service
+      template:
+        src: alertmanager.service.j2
+        dest: /usr/lib/systemd/system/alertmanager.service
+    - name: enable alertmanager service
+      systemd:
+        name: 'alertmanager'
+        enabled: yes
+        daemon_reload: true
+        masked: no
+      notify: alertmanager config changed
+  tags: alertmanager

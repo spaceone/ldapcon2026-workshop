@@ -1,0 +1,20 @@
+[Unit]
+Description=Telegraf service for sharing openldap and system stats with prometheus
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=all
+EnvironmentFile=-/etc/default/telegraf
+User=telegraf
+ExecStart=/usr/bin/telegraf --config $CONFIG --config-directory $CONFIG_DIR
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartForceExitStatus=SIGPIPE
+KillMode=mixed
+LimitMEMLOCK=8M:8M
+PrivateMounts=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,35 @@
+- name: install mtail
+  package:
+    name: mtail
+    state: latest
+
+- name: configure mtail service
+  copy:
+    src: mtail.default
+    dest: /etc/default/mtail
+  register: default
+
+- name: add mtail to openldap group
+  user:
+    name: mtail
+    groups:
+      - openldap
+    append: true
+
+- name: copy monitoring definitions
+  copy:
+    src: slapd.mtail
+    dest: /etc/mtail/slapd.mtail
+  register: program
+
+- name: start mtail
+  service:
+    name: mtail
+    state: '{{ (default.changed or program.changed) | ternary("restarted", "started") }}'
+
+- name: register with telegraf
+  copy:
+    src: input-mtail.conf
+    dest: /etc/telegraf/telegraf.d/input-mtail.conf
+  notify: telegraf config changed
+  tags: [ telegraf_conf ]

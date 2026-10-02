@@ -1,0 +1,83 @@
+# Issue a cert for given params on {{ ca_host }} and deploy it
+- name: Create directory
+  file:
+    path: '{{ cacert_path | dirname }}'
+    state: directory
+
+- name: Fetch CA
+  fetch:
+    src: '{{ cacert_path }}'
+    dest: '{{ participant }}/tls/'
+    flat: yes
+  delegate_to: '{{ ca_host }}'
+
+- name: Upload CA
+  copy:
+    src: '{{ participant }}/tls/ca.crt'
+    dest: '{{ cacert_path }}'
+  register: ca
+
+- name: Generate an OpenSSL private key
+  community.crypto.openssl_privatekey:
+    path: '/opt/symas/ssl/{{ inventory_hostname }}.key'
+    owner: '{{ privatekey_owner | default(omit) }}'
+    group: '{{ privatekey_group | default(omit) }}'
+
+- name: Generate a CSR for host
+  community.crypto.openssl_csr:
+    path: '/opt/symas/ssl/{{ inventory_hostname }}.csr'
+    privatekey_path: '/opt/symas/ssl/{{ inventory_hostname }}.key'
+    subject_ordered: '{{ subject_ordered }}'
+    subject_alt_name: 'DNS:{{ external_hostname | default(inventory_hostname) }}'
+
+- name: Fetch CSR
+  fetch:
+    src: '/opt/symas/ssl/{{ inventory_hostname }}.csr'
+    dest: '{{ participant }}/tls/'
+    flat: yes
+
+- name: Upload CSR to signing host
+  copy:
+    src: '{{ participant }}/tls/{{ inventory_hostname }}.csr'
+    dest: /opt/symas/ssl/csr/
+  delegate_to: '{{ ca_host }}'
+  register: csr
+
+- name: Check certificate presence
+  stat:
+    path: '/opt/symas/ssl/certs/{{ inventory_hostname }}.crt'
+  delegate_to: '{{ ca_host }}'
+  register: cert_presence
+
+- name: Check certificate validity
+  community.crypto.x509_certificate_info:
+    path: '/opt/symas/ssl/certs/{{ inventory_hostname }}.crt'
+    valid_at:
+      next_month: "+5w"
+  delegate_to: '{{ ca_host }}'
+  register: cert_validity
+  when: cert_presence.stat.exists
+
+- name: Generate cert
+  community.crypto.x509_certificate:
+    path: '/opt/symas/ssl/certs/{{ inventory_hostname }}.crt'
+    csr_path: '/opt/symas/ssl/csr/{{ inventory_hostname }}.csr'
+    provider: ownca
+    ownca_path: '{{ cacert_path }}'
+    ownca_privatekey_path: '{{ cakey_path }}'
+    ownca_privatekey_passphrase: '{{ lookup("password", "secrets/capass") }}'
+    ownca_not_after: "+366d"
+  delegate_to: '{{ ca_host }}'
+  when: csr.changed or not cert_presence.stat.exists or not cert_validity.valid_at.next_month
+
+- name: Fetch cert
+  fetch:
+    src: '/opt/symas/ssl/certs/{{ inventory_hostname }}.crt'
+    dest: '{{ participant }}/tls/'
+    flat: yes
+  delegate_to: '{{ ca_host }}'
+
+- name: Upload cert
+  copy:
+    src: '{{ participant }}/tls/{{ inventory_hostname }}.crt'
+    dest: '{{ cert_path }}'

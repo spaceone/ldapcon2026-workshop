@@ -1,0 +1,33 @@
+- hosts: all
+  tasks:
+    - name: Sanity checks
+      assert:
+        that:
+          - groups.ca | length == 1
+
+- hosts: all
+  roles:
+    - baseline
+
+- hosts: simple_auth
+  roles:
+    - instance
+
+- hosts: ca
+  roles:
+    - ca
+
+- hosts: openldap
+  roles:
+    - letsencrypt
+    - db
+    - monitornode
+
+- hosts: monitor
+  roles:
+    - monitor
+  tags: monitor
+
+- hosts: jmeter
+  roles:
+    - jmeter

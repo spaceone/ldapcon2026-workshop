@@ -1,0 +1,149 @@
+- name: Configure Grafana
+  block:
+    - name: Open grafana and alertmanager ports
+      firewalld:
+        zone: public
+        port: "{{ item }}/tcp"
+        permanent: yes
+        state: enabled
+        immediate: yes
+      loop:
+        - 3000
+        - 9093
+      tags: [ firewall ]
+    - name: create grafana dirs
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: grafana
+        group: prometheus
+      loop:
+        - /var/lib/grafana/
+        - /var/lib/grafana/dashboards
+        - /etc/grafana/tls
+    - name: copy letsencrypt certificate
+      ansible.builtin.copy:
+        src: "{{ letsencrypt_path }}/fullchain.pem"
+        dest: /etc/grafana/tls/fullchain.pem
+        owner: grafana
+        group: grafana
+        mode: "0640"
+      notify: grafana config changed
+    - name: copy letsencrypt key
+      ansible.builtin.copy:
+        src: "{{ letsencrypt_path }}/privkey.pem"
+        dest: /etc/grafana/tls/privkey.pem
+        owner: grafana
+        group: grafana
+        mode: "0600"
+      notify: grafana config changed
+    - name: enable grafana HTTPS
+      ansible.builtin.blockinfile:
+        path: /etc/grafana/grafana.ini
+        marker: "# {mark} ANSIBLE MANAGED GRAFANA HTTPS"
+        insertafter: '^\[server\]'
+        block: |
+          protocol = https
+          http_port = 3000
+          domain = {{ inventory_hostname }}
+          cert_file = /etc/grafana/tls/fullchain.pem
+          cert_key = /etc/grafana/tls/privkey.pem
+      notify: grafana config changed
+    - name: grafana prometheus datasource
+      template:
+        src: prometheus-datasource.j2
+        dest: '/etc/grafana/provisioning/datasources/prometheus-datasource.yml'
+        owner: grafana
+        group: grafana
+      notify: grafana config changed
+      tags: [ grafana_conf ]
+    - name: enable grafana dashboard
+      template:
+        src: grafana-config.j2
+        dest: '/etc/grafana/provisioning/dashboards/symas-dashboard.yaml'
+        owner: grafana
+        group: grafana
+      notify: grafana config changed
+      tags: [ grafana_conf ]
+    - name: stage grafana dashboard
+      template:
+        src: symas-dashboard.j2
+        dest: /tmp/symas-openldap.json
+      tags: [ grafana_stage ]
+    - name: deploy grafana dashboard
+      ansible.builtin.copy:
+        src: /tmp/symas-openldap.json
+        dest: '/var/lib/grafana/dashboards/symas-openldap.json'
+        remote_src: true
+        owner: grafana
+        group: grafana
+        mode: "0644"
+      notify: grafana config changed
+      tags: [ grafana_conf ]
+    - name: set the grafana console password
+      become: true
+      become_user: grafana
+      ansible.builtin.command: >
+        grafana cli
+        --config /etc/grafana/grafana.ini
+        --homepath /usr/share/grafana
+        --configOverrides cfg:default.paths.data=/var/lib/grafana
+        admin reset-admin-password {{ rootpw }}
+      tags: console
+    - name: grafana db chown
+      ansible.builtin.file:
+        path: /var/lib/grafana/
+        state: directory
+        recurse: true
+        owner: grafana
+  tags: [ grafana, conf ]
+
+- name: Configure Prometheus
+  block:
+    - name: create prometheus dirs
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: prometheus
+        group: prometheus
+      loop:
+        - /etc/prometheus
+        - /etc/prometheus/console_libraries
+        - /etc/prometheus/consoles
+        - /var/lib/prometheus
+    - name: prometheus properties
+      template:
+        src: prometheus-conf.j2
+        dest: '/etc/prometheus/prometheus.yml'
+        owner: prometheus
+        group: prometheus
+      notify: prometheus config changed
+      tags: [ prometheus_properties ]
+  tags: [ prometheus, prometheus_conf, conf ]
+
+- name: Configure Alert Manager
+  block:
+    - name: create alert manager dirs
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: alertmanager
+        group: alertmanager
+      loop:
+        - /etc/alertmanager
+        - /var/lib/alertmanager
+    - name: alert manager properties
+      template:
+        src: alertmanager-conf.j2
+        dest: '/etc/alertmanager/alertmanager.yml'
+        owner: alertmanager
+        group: alertmanager
+      notify: alertmanager config changed
+    - name: openldap alert manager properties
+      template:
+        src: openldap-alerts.j2
+        dest: '/etc/prometheus/openldap_alerts.yml'
+        owner: alertmanager
+        group: alertmanager
+      notify: [ "alertmanager config changed", "prometheus config changed" ]
+  tags: [ alertmanager, conf ]

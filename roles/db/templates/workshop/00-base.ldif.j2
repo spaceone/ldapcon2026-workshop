@@ -1,0 +1,40 @@
+# Containers.  ou=policies starts out empty on purpose -- creating the
+# first policy is the first thing the workshop does.
+dn: {{ suffix }}
+objectClass: dcObject
+objectClass: organization
+dc: example
+o: Example Corp
+
+dn: ou=people,{{ suffix }}
+objectClass: organizationalUnit
+ou: people
+description: Human beings who log in.
+
+dn: ou=applications,{{ suffix }}
+objectClass: organizationalUnit
+ou: applications
+description: Service accounts. Long random passwords, never expire.
+
+dn: ou=hosts,{{ suffix }}
+objectClass: organizationalUnit
+ou: hosts
+description: Machine accounts used by sssd and friends.
+
+dn: ou=external,{{ suffix }}
+objectClass: organizationalUnit
+ou: external
+description: Partner and contractor accounts. Held to a stricter standard.
+
+dn: ou=groups,{{ suffix }}
+objectClass: organizationalUnit
+ou: groups
+
+dn: ou=policies,{{ suffix }}
+objectClass: organizationalUnit
+ou: policies
+description: Password policies live here. Empty until stage 1.
+
+dn: ou=administrators,{{ suffix }}
+objectClass: organizationalUnit
+ou: administrators

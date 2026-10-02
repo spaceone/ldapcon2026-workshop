@@ -1,0 +1,25 @@
+###############################################################################
+# TELEGRAF CONFIGURATION for OpenLDAP monitor, slapdresults, cpu and mem      #
+###############################################################################
+# GLOBAL TAGS                                                                 #
+###############################################################################
+[global_tags]
+  dc = "ldap-test" #Example: ldap-dev, ldap-production
+
+###############################################################################
+# TELEGRAF AGENT CONFIGURATION                                                #
+###############################################################################
+[agent]
+  hostname = "{{ inventory_hostname }}"
+  interval = "3s"
+  round_interval = true
+  metric_batch_size = 10000
+  metric_buffer_limit = 100000
+  flush_interval = "10s"
+  omit_hostname = false
+  logtarget = "file"
+  logfile = "/var/log/telegraf/telegraf.log"
+  logfile_rotation_interval = "48h"
+  logfile_rotation_max_size = "200MB"
+  logfile_rotation_max_archives = 10
+  debug = false

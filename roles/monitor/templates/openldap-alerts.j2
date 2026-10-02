@@ -1,0 +1,148 @@
+groups:
+- name: openldap-alerts
+  rules:
+  - alert: OpenLDAPTooManyConnections
+    expr: openldap_connections_current > 10
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: "OpenLDAP has more than 10 active connections on {{ '{{ $labels.host }}' }}"
+      description: "Current connections"
+  - alert: OpenLDAPExcessiveBindFailures
+    expr: increase(tail_f_err_count{t_tag="97", t_err="49"}[1m]) >= 100
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "OpenLDAP: Excessive Bind Failures Detected"
+      description: "There have been {{ '{{ $value }}' }} bind failures on {{ '{{ $labels.host }}' }}."
+  - alert: OpenLDAPDefaultDBUtilizationHigh
+    expr: openldap_databases_database_3_mdb_pages_used * 4096 >= 1073741824
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: "OpenLDAP default database utilization exceeds 1GB on {{ '{{ $labels.host }}' }}"
+      description: "Default Database is using {{ '{{ $value | humanize }}' }} bytes (>=1GB)."
+  - alert: OpenLDAPLogDBUtilizationHigh
+    expr: openldap_databases_database_2_mdb_pages_used * 4096 >= 1073741824
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: "OpenLDAP log database utilization exceeds 1GB on {{ '{{ $labels.host }}' }}"
+      description: "Log Database is using {{ '{{ $value | humanize }}' }} bytes (>=1GB)."
+{% for name in groups.database %}
+  - alert: OpenLDAPDown
+    expr: absent(openldap_time_uptime{host="{{ name }}"})
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "OpenLDAP server M1 is DOWN"
+      description: "OpenLDAP server went down on {{ '{{ $labels.host }}' }}."
+{% endfor %}
+
+- name: memory-alerts
+  rules:
+  - alert: MemAvailableLowWarning
+    expr: (mem_available_percent < 25) or ((mem_available / mem_total) * 100 < 25)
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Memory available low on {{ '{{ $labels.instance }}' }}"
+      description: |
+        mem_available is below 25% for 5m on {{ '{{ $labels.instance }}' }}.
+        Check for swap activity and large processes. Commands to investigate: free -h, vmstat 1 5, top -o RES.
+      runbook: "Investigate large processes, restart or scale as needed."
+  - alert: MemAvailableLowCritical
+    expr: (mem_available_percent < 15) or ((mem_available / mem_total) * 100 < 15)
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "CRITICAL: memory available very low on {{ '{{ $labels.instance }}' }}"
+      description: |
+        mem_available is below 15% for 5m on {{ '{{ $labels.instance }}' }} — severe memory pressure likely.
+        Check for swap I/O, OOM messages, and runaway processes. Useful commands: dmesg | tail, iostat -x 1 5, vmstat 1 5.
+      runbook: "Consider freeing memory, restarting offending services, or scaling."
+  - alert: MemUsedHigh
+    expr: ((mem_used / mem_total) * 100) > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High memory usage on {{ '{{ $labels.instance }}' }}"
+      description: |
+        mem_used / mem_total > 85% for 5m on {{ '{{ $labels.instance }}' }}.
+        This is an overall usage alert; correlate with mem_available and swap activity before remediation.
+      runbook: "Investigate top memory consumers (ps aux --sort=-rss)."
+  - alert: SwapUsageWarning
+    expr: ((mem_swap_total - mem_swap_free) / mem_swap_total) * 100 > 5
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Swap being used on {{ '{{ $labels.instance }}' }}"
+      description: |
+        Swap usage > 5% for 5m. Swap usage is an early sign of pressure. Check swap I/O and processes.
+        Commands: swapon -s, vmstat 1 5, iostat -x 1 5.
+      runbook: "Investigate memory usage or add swap/ram."
+  - alert: SwapUsageCritical
+    expr: ((mem_swap_total - mem_swap_free) / mem_swap_total) * 100 > 20
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "CRITICAL: Excessive swap usage on {{ '{{ $labels.instance }}' }}"
+      description: |
+        Swap usage > 20% for 5m. Expect performance degradation caused by paging.
+        Check for sustained swap-in/out and consider adding RAM or moving workload.
+      runbook: "Investigate heavy swapers, consider rebooting services or adding memory."
+  - alert: SwapGrowthCritical
+    expr: increase(mem_swap_free[5m]) < - (0.02 * mem_swap_total)
+    for: 3m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Swap usage growing on {{ '{{ $labels.instance }}' }}"
+      description: |
+        Swap free decreased by more than 2% of total swap in the last 5m — swap is being consumed quickly.
+        This often precedes user-visible performance problems.
+      runbook: "Investigate runaway processes or sudden memory spikes."
+  - alert: MemDirtyHigh
+    expr: mem_dirty > (0.05 * mem_total)
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High number of dirty pages on {{ '{{ $labels.instance }}' }}"
+      description: |
+        mem_dirty is > 5% of total memory for 2m. Large dirty page backlog can indicate IO writeback bottlenecks.
+        Check disk IO, dstat/iostat, and applications performing heavy writes.
+      runbook: "Investigate IO latency and backpressure; tune dirty_ratio or fix slow disks."
+  - alert: MemSevereComposite
+    expr: ((mem_available / mem_total) * 100 < 20)
+          and
+          (increase(mem_swap_free[5m]) < - (0.01 * mem_swap_total))
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Severe memory pressure on {{ '{{ $labels.instance }}' }}"
+      description: |
+        mem_available < 20% and swap usage increased in the last 5m on {{ '{{ $labels.instance }}' }}.
+        This composite condition indicates sustained memory pressure with active swapping.
+      runbook: "Immediate investigation: top, vmstat, iostat. Consider killing runaway processes or scaling."
+  - alert: MemAvailableAbsoluteSmallVM
+    expr: mem_available < 268435456
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Low absolute available memory (<256MiB) on {{ '{{ $labels.instance }}' }}"
+      description: |
+        On small VMs absolute thresholds are more meaningful. mem_available < 256 MiB for 5m.
+      runbook: "Consider increasing instance size or reducing memory footprint."

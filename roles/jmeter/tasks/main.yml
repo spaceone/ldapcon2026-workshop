@@ -1,0 +1,6 @@
+- name: jmeter package install
+  import_tasks: package.yml
+  tags: [ refresh ]
+- name: jmeter config update
+  import_tasks: config.yml
+  tags: [ refresh, config ]

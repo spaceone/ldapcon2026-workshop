@@ -1,0 +1,58 @@
+# a CA
+- name: Required packages
+  package:
+    name: python3-cryptography
+    state: latest
+
+- name: Files
+  file:
+    path: '{{ item }}'
+    state: directory
+  loop:
+    - '{{ cacert_path | dirname }}'
+    - /opt/symas/ssl/csr
+    - /opt/symas/ssl/certs
+
+- name: Generate CA key
+  community.crypto.openssl_privatekey:
+    path: '{{ cakey_path }}'
+    cipher: auto
+    passphrase: '{{ lookup("password", "secrets/capass") }}'
+
+- name: Generate CA csr
+  community.crypto.openssl_csr:
+    path: '{{ cacsr_path }}'
+    privatekey_path: '{{ cakey_path }}'
+    privatekey_passphrase: '{{ lookup("password", "secrets/capass") }}'
+    basic_constraints: "CA:TRUE"
+    subject_ordered: '{{ ca_dn | dn2subject_ordered }}'
+  register: csr
+
+- name: Check CA presence
+  stat:
+    path: "{{ cacert_path }}"
+  register: ca_presence
+
+- name: Check CA validity
+  community.crypto.x509_certificate_info:
+    path: '{{ cacert_path }}'
+    valid_at:
+      next_year: "+55w"
+  register: validity
+  when: ca_presence.stat.exists
+
+- name: Generate CA cert
+  community.crypto.x509_certificate:
+    path: '{{ cacert_path }}'
+    csr_path: '{{ cacsr_path }}'
+    privatekey_path: '{{ cakey_path }}'
+    privatekey_passphrase: '{{ lookup("password", "secrets/capass") }}'
+    provider: selfsigned
+    selfsigned_not_after: '+150w'
+  when: csr.changed or not ca_presence.stat.exists or not validity.valid_at.next_year
+
+- name: Fetch CA
+  fetch:
+    src: '{{ cacert_path }}'
+    dest: tls/
+    flat: yes

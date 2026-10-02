@@ -1,0 +1,65 @@
+# Copyright (c) 2026 by Symas Corporation.
+
+# Host name and port of LDAP:
+host={{ ldap_host }}
+port={{ listen_port }}
+
+# These credentials are for LDAP user which has write access to User and Group containers:
+admin.user=uid=jmeter,ou=applications,{{ suffix }}
+admin.pw={{ rootpw }}
+
+# Define the structure of LDAP DIT:
+suffix={{ suffix }}
+user.root=ou=People,{{ suffix }}
+group.root=ou=Groups,{{ suffix }}
+user.objectclass=inetOrgPerson
+group.objectclass={{ group_objectclass }}
+group.member={{ group_member_attr_name }}
+# Used when ldap schema requires at least one member:
+{% if group_attr_deflt_value is defined %}
+group.member.default={{ group_attr_deflt_value }}
+{% endif %}
+
+{% if dynlist_atr_name is defined %}
+group.dynlist.atr.name={{ dynlist_atr_name }}
+group.dynlist.atr.uri={{ dynlist_atr_uri }}
+group.dynlist.atr.filter={{ dynlist_atr_filter }}
+
+{% if dynlist_obj is defined %}
+group.dynlist.obj={{ dynlist_obj }}
+{% endif %}
+{% endif %}
+
+# This is min/max settings for LDAP administrator pool which has write access to User and Group containers:
+min.admin.conn={{ min_connections_admin }}
+max.admin.conn={{ max_connections_admin }}
+
+# This is min/max connection pool settings for LDAP User authentication connection pool:
+min.user.conn={{ min_connections_user }}
+max.user.conn={{ max_connections_user }}
+
+# number of milliseconds between evicter thread runs (admin and user):
+admin.conn.evict.run.millis={{ pool_evict_delay }}
+
+# enable this to see trace statements when connection pool allocates new connections:
+debug.ldap.pool=true
+# Default for pool reconnect flag is false:
+enable.pool.reconnect=true
+authn.type=default
+ldap.server.type=openldap
+
+{% if encryption is defined %}
+# LDAPS Config
+{{ encryption }}=true
+{% if truststore_name is defined %}
+trust.store={{ truststore_name }}
+trust.store.password={{ truststorepw }}
+trust.store.onclasspath=false
+{% endif %}
+{% endif %}
+
+# Reverse lookup for group membership:
+member.attr={{ member_attribute_name }}
+
+# This property is required and must be valid DN (format) but isn't used:
+config.root=ou=NotUsed,o=empty

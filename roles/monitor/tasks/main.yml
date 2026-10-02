@@ -1,0 +1,11 @@
+- name: create openldap group
+  ansible.builtin.group:
+    name: openldap
+    state: present
+- name: monitor package install
+  import_tasks: package.yml
+- name: monitor config update
+  import_tasks: config.yml
+
+
+

@@ -1,0 +1,36 @@
+- name: Update authorized keys
+  authorized_key:
+    user: root
+    state: "{{ ( ( item | basename | splitext | last ) == '.absent' ) | ternary('absent', 'present') }}"
+    key: "{{ lookup( 'file', item ) }}"
+    comment: "{{ item | basename | splitext | first }}"
+  with_fileglob:
+    - ssh_keys/*
+
+- name: Make sure includes are enabled
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^Include'
+    insertbefore: '^[^#]'
+    line: 'Include /etc/ssh/sshd_config.d/*.conf'
+
+- name: Create drop-in directory
+  file:
+    path: /etc/ssh/sshd_config.d/
+    state: directory
+
+- name: Disable password auth
+  copy:
+    src: sshd_dropin
+    dest: /etc/ssh/sshd_config.d/00_no_password_auth.conf
+  notify: restart sshd
+
+- name: Deploy config files
+  copy:
+    src: 'dotfiles/{{ item.path }}'
+    dest: '/etc/{{ item.path }}'
+    owner: root
+    group: root
+    mode: '{{ item.mode }}'
+  with_community.general.filetree:
+    - dotfiles/

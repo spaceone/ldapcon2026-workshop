@@ -1,0 +1,25 @@
+{#-
+    Timestamps for the seed data, relative to when it is rendered.
+
+    Plain Jinja2 plus the two things Ansible provides out of the box:
+    the now() global and the strftime filter.  No filter plugin needed.
+    lab/instance.py supplies the same two with the same calling
+    convention, so these files render identically in the proof suite.
+
+    The seed only works for a while after it is rendered (about three
+    weeks -- see README), so render it when the data is *loaded*, not
+    on every run of a playbook.
+-#}
+{#-
+    Note now(), not now(utc=true): Ansible's UTC variant returns a naive
+    datetime, which .timestamp() then reads as local time, shifting every
+    value by the controller's UTC offset.  Plain now() is naive local
+    time, which .timestamp() handles correctly; strftime(..., utc=true)
+    does the formatting in UTC.
+-#}
+{%- macro ago(days=0, hours=0, minutes=0) -%}
+{{ '%Y%m%d%H%M%SZ' | strftime(now().timestamp() - ((days * 24 + hours) * 60 + minutes) * 60, utc=true) }}
+{%- endmacro -%}
+{%- macro ahead(days=0, hours=0, minutes=0) -%}
+{{ ago(days=-days, hours=-hours, minutes=-minutes) }}
+{%- endmacro -%}

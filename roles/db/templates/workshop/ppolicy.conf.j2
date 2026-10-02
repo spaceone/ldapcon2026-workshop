@@ -1,0 +1,75 @@
+{#-
+    The password policy part of slapd.conf, as it stands after
+    `ppolicy_stages_done` stages of the workshop: 0 is the seed, 8 is
+    the end.  Include it at the end of the main database's section.
+
+    Variables:
+      suffix               e.g. dc=example,dc=com
+      ppolicy_stages_done  0..8, default 0
+      ppolicy_replica      true on the replica, default false
+      ppm_module           path to ppm.so; only needed from stage 4 on
+
+    The Ansible role (roles/db/templates/workshop/) carries a copy of
+    this file and of data/.  lab/test_stage9_deploy.py checks every
+    stage of it against the configuration the proof suite ends that
+    stage with, and that the role's copies are identical.
+-#}
+{%- set done = ppolicy_stages_done | default(0) | int -%}
+{%- set policies = 'ou=policies,' ~ suffix -%}
+{% if done >= 6 %}
+# Stage 6: stamp pwdLastSuccess on every bind, which pwdMaxIdle needs.
+# At most once an hour per account, so binds stay reads.
+lastbind on
+lastbind-precision 3600
+
+{% endif %}
+overlay ppolicy
+
+# Accept a cleartext password on the wire and hash it on the way in.
+ppolicy_hash_cleartext
+{% if ppolicy_replica | default(false) and done >= 8 %}
+
+# Stage 8: this is a replica, so send the writes a bind causes to the
+# provider, through the chain overlay.  Before that, failures are
+# counted here and nowhere else -- the hole stage 8 is about.
+ppolicy_forward_updates
+{% endif %}
+{% if done >= 2 %}
+
+# Stage 2: an account that is locked says so, instead of just failing.
+ppolicy_use_lockout
+{% endif %}
+{% if done >= 4 %}
+
+# Stage 4: password quality checking; policies opt in with
+# pwdUseCheckModule and configure it with pwdCheckModuleArg.
+ppolicy_check_module {{ ppm_module }}
+{% endif %}
+{% if done < 5 %}
+
+# The policy for any entry with a password that nothing else claims.
+# This is the classic way to start, and what most existing deployments
+# still look like. It is deprecated in favour of ppolicy_rules, which
+# stage 5 introduces -- and stage 5 ends by replacing this line with an
+# explicit catch-all rule.
+ppolicy_default "cn=default,{{ policies }}"
+{% else %}
+
+# Stage 5: pick a policy by where the entry is and what it belongs to.
+# First match wins.  The policy entries replicate, but these rules are
+# configuration and do not: a replica needs the same list.
+ppolicy_rules dn.subtree="ou=applications,{{ suffix }}"
+    policy_dn="cn=service,{{ policies }}"
+ppolicy_rules dn.subtree="ou=hosts,{{ suffix }}"
+    policy_dn="cn=service,{{ policies }}"
+ppolicy_rules dn.subtree="ou=external,{{ suffix }}"
+    policy_dn="cn=external,{{ policies }}"
+ppolicy_rules dn.subtree="ou=people,{{ suffix }}"
+    group/groupOfMembers/member="cn=oncall,ou=groups,{{ suffix }}"
+    policy_dn="cn=privileged,{{ policies }}"
+# The catch-all that replaces ppolicy_default.  require_password keeps
+# it off entries with no password, which is what ppolicy_default did.
+ppolicy_rules dn.subtree="{{ suffix }}"
+    require_password=true
+    policy_dn="cn=default,{{ policies }}"
+{% endif %}

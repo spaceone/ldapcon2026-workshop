@@ -1,0 +1,14 @@
+- name: Issue certificate with built-in server
+  command:
+    argv:
+      - certbot
+      - certonly
+      - '--standalone'
+      - '--agree-tos'
+      - '--non-interactive'
+      - '-m'
+      - '{{ letsencrypt_contact }}'
+      - '-d'
+      - '{{ letsencrypt_domains | flatten | join(",") }}'
+  register: result
+  changed_when: '"Certificate not yet due for renewal" not in result.stdout_lines'

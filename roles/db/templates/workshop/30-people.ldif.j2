@@ -1,0 +1,170 @@
+{% from '_time.j2' import ago, ahead -%}
+# The cast.  Names are the usual cryptographic-protocol crowd, because
+# they already carry roles: mallory is the one who attacks, peggy is the
+# one who proves things.
+#
+# Timestamps are Jinja2 -- ago(days=400) and friends, from _time.j2 --
+# rendered when the seed is loaded, so the aged accounts stay aged
+# however long this material sits on a shelf.  The margins are chosen so
+# the seed still works up to about three weeks after it was rendered:
+# carol has 20 days left inside a 30-day warning, ivan starts in a
+# month.  Every password is "<uid>-pw".
+#
+#   alice    healthy, changed yesterday          the control case
+#   bob      changed 400 days ago                expired under pwdMaxAge
+#   carol    changed 345 days ago                inside pwdExpireWarning
+#   dave     has not logged in for 200 days      pwdMaxIdle
+#   erin     flagged as reset by an admin        pwdReset / pwdMustChange
+#   frank    locked by an admin, permanently      pwdAccountLockedTime
+#   grace    an administrator                    group-based assignment
+#   heidi    HAS NO PASSWORD AT ALL              require_password
+#   ivan     starts next month                   pwdStartTime
+#   judy     left last month                     pwdEndTime
+#   mallory  fresh and expendable                the brute-force target
+#   oscar    password stored in the clear        hashing / rehash
+#   peggy    fresh                               history and quality
+#
+# employeeType is staff for everyone except carol and peggy, who are
+# contractors -- stage 5 targets a policy with a filter on it.
+
+dn: uid=alice,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice Ahmed
+sn: Ahmed
+mail: alice@example.com
+employeeType: staff
+userPassword: {SSHA}By44dgO7UjY2IXJqEq0nC/1Z1TxS/SnJ
+pwdChangedTime: {{ ago(days=1) }}
+
+dn: uid=bob,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: bob
+cn: Bob Bergström
+sn: Bergström
+mail: bob@example.com
+employeeType: staff
+userPassword: {SSHA}t8yQbTiZyFbjbPlMdnIaI6gFVh0RXK+B
+pwdChangedTime: {{ ago(days=400) }}
+
+dn: uid=carol,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: carol
+cn: Carol Castellanos
+sn: Castellanos
+mail: carol@example.com
+employeeType: contractor
+userPassword: {SSHA}SOfelHOGBbX347BzC1Z9/PHyPsgDAO1O
+pwdChangedTime: {{ ago(days=345) }}
+
+dn: uid=dave,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: dave
+cn: Dave Doherty
+sn: Doherty
+mail: dave@example.com
+employeeType: staff
+userPassword: {SSHA}KGliBhBAnbUwaaePmaVLx3NyXzRDw7bW
+pwdChangedTime: {{ ago(days=30) }}
+pwdLastSuccess: {{ ago(days=200) }}
+
+dn: uid=erin,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: erin
+cn: Erin Eriksen
+sn: Eriksen
+mail: erin@example.com
+employeeType: staff
+userPassword: {SSHA}AYN01h+7J7+WTuUC2lfK5788AncHYUDm
+pwdChangedTime: {{ ago(hours=2) }}
+pwdReset: TRUE
+
+dn: uid=frank,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: frank
+cn: Frank Fitzgerald
+sn: Fitzgerald
+mail: frank@example.com
+employeeType: staff
+userPassword: {SSHA}BTaHe+JZ7FPjyXifs99KvxravNaMcnaI
+pwdChangedTime: {{ ago(days=90) }}
+# The draft's sentinel: locked by an administrator, and stays locked
+# however long pwdLockoutDuration is. A lock with a real timestamp in
+# it would quietly expire partway through the workshop.
+pwdAccountLockedTime: 000001010000Z
+pwdFailureTime: {{ ago(minutes=12) }}
+pwdFailureTime: {{ ago(minutes=11) }}
+pwdFailureTime: {{ ago(minutes=10) }}
+
+dn: uid=grace,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: grace
+cn: Grace Gallagher
+sn: Gallagher
+mail: grace@example.com
+employeeType: staff
+userPassword: {SSHA}ZcNAzmzV0Ivr6E5lbBxmoo9WIL8VY84D
+pwdChangedTime: {{ ago(days=45) }}
+
+# Deliberately has no userPassword.  Stage 4 uses her to show what
+# require_password is for.
+dn: uid=heidi,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: heidi
+cn: Heidi Halvorsen
+sn: Halvorsen
+mail: heidi@example.com
+
+dn: uid=ivan,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: ivan
+cn: Ivan Ivanović
+sn: Ivanović
+mail: ivan@example.com
+employeeType: staff
+userPassword: {SSHA}1tVUnYNptUCWqqnLJdA4LQOzfSbop+w2
+pwdChangedTime: {{ ago(days=1) }}
+pwdStartTime: {{ ahead(days=30) }}
+
+dn: uid=judy,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: judy
+cn: Judy Jørgensen
+sn: Jørgensen
+mail: judy@example.com
+employeeType: staff
+userPassword: {SSHA}ySKD4mWi0xGZEoWTK/Uhv07pxIXVYvlZ
+pwdChangedTime: {{ ago(days=200) }}
+pwdEndTime: {{ ago(days=30) }}
+
+dn: uid=mallory,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: mallory
+cn: Mallory Mbeki
+sn: Mbeki
+mail: mallory@example.com
+employeeType: staff
+userPassword: {SSHA}R8ikGCeW6s0BPlXhmmzhlM3CJarhrp03
+pwdChangedTime: {{ ago(days=3) }}
+
+# Password sitting in the directory in the clear, the way it does in
+# every directory that has been running long enough.
+dn: uid=oscar,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: oscar
+cn: Oscar Okonkwo
+sn: Okonkwo
+mail: oscar@example.com
+employeeType: staff
+userPassword: oscar-pw
+pwdChangedTime: {{ ago(days=500) }}
+
+dn: uid=peggy,ou=people,{{ suffix }}
+objectClass: inetOrgPerson
+uid: peggy
+cn: Peggy Pérez
+sn: Pérez
+mail: peggy@example.com
+employeeType: contractor
+userPassword: {SSHA}kbAg6Ofnf0WIvEKvQ1iRASxZ5Ds7+DCx
+pwdChangedTime: {{ ago(days=5) }}

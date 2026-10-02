@@ -1,0 +1,6 @@
+- hosts: openldap
+  roles:
+    - monitornode
+- hosts: monitor
+  roles:
+    - monitor

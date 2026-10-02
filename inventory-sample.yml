@@ -1,0 +1,38 @@
+all:
+  vars:
+    test_mode: false
+    ansible_user: root
+  hosts:
+    ldap-@@.ldapcon2026.symas.net:
+      openldap_role: balancer
+    ldap1-@@.ldapcon2026.symas.net:
+      openldap_serverid: 1
+    ldap2-@@.ldapcon2026.symas.net:
+      openldap_serverid: 2
+ca:
+  hosts:
+    ldap1-@@.ldapcon2026.symas.net:
+openldap:
+  children:
+    database:
+      hosts:
+        ldap1-@@.ldapcon2026.symas.net:
+    balancer:
+      hosts:
+        ldap-@@.ldapcon2026.symas.net:
+    replica:
+      hosts:
+        ldap2-@@.ldapcon2026.symas.net:
+simple_auth:
+  hosts:
+    ldap-@@.ldapcon2026.symas.net:
+    ldap1-@@.ldapcon2026.symas.net:
+    ldap2-@@.ldapcon2026.symas.net:
+    monitor-@@.ldapcon2026.symas.net:
+monitor:
+  hosts:
+    monitor-@@.ldapcon2026.symas.net:
+jmeter:
+  hosts:
+    ldap-@@.ldapcon2026.symas.net:
+      ldap_host: ldap1-@@.ldapcon2026.symas.net

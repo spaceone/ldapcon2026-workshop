@@ -1,0 +1,38 @@
+- name: ldap load gen properties
+  template:
+    src: ldap-load-gen.j2
+    dest: '{{ repo_directory }}/config/fortress.properties'
+- name: set jmeter memory
+  lineinfile:
+    state: present
+    path: '{{ repo_directory }}/pom.xml'
+    regexp: '^[#\s]*<{{ item }}>'
+    line: '                <{{ item }}>{{ jmeter_memory }}</{{ item }}>'
+  with_items: [ xms, xmx ]
+  when: jmeter_memory is defined
+  tags: [ memory ]
+- name: jmeter configs
+  template:
+    src: '{{ item }}.j2'
+    dest: '{{ repo_directory }}/src/test/jmeter/{{ item }}.jmx'
+  with_items:
+    ['{{ jmeterscripts }}']
+- name: copy log config
+  ansible.builtin.copy:
+    src: "log4j2.xml"
+    dest: "{{ repo_directory }}/src/test/conf"
+- name: copy load test scripts
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ repo_directory }}/{{ item }}"
+    mode: 0754
+  loop:
+    - load-test.sh
+    - run-load-tests.sh
+  tags: [ script ]
+- name: symlink loadtest into PATH
+  ansible.builtin.file:
+    src: '{{ repo_directory }}/load-test.sh'
+    dest: /usr/local/bin/loadtest
+    state: link
+  tags: [ script ]

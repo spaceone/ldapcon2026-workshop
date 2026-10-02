@@ -1,0 +1,14 @@
+- name: monitor node package install
+  import_tasks: package.yml
+
+- name: monitor node config
+  import_tasks: config.yml
+
+- name: mtail node
+  import_tasks: mtail.yml
+
+- name: restart telegraf
+  service:
+    name: telegraf
+    state: restarted
+  tags: [ never, restart ]
