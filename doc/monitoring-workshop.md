@@ -2,12 +2,12 @@
 
 ## sample env
 
-    load balancer / jmeter machine: ldap-01.ldapcon2026.symas.net
-    ldap provider :ldap1-01.ldapcon2026.symas.net
-    ldap consumer: ldap2-01.ldapcon2026.symas.net
-    monitor host: monitor-01.ldapcon2026.symas.net
+    load balancer / jmeter machine: ldap-99.ldapcon2026.symas.net
+    ldap provider :ldap1-99.ldapcon2026.symas.net
+    ldap consumer: ldap2-99.ldapcon2026.symas.net
+    monitor host: monitor-99.ldapcon2026.symas.net
 
-# preparation
+## preparation
 
 If you are using cn=config, change it back.
 
@@ -22,8 +22,8 @@ drwxr-xr-x 3 openldap openldap 4096 Oct  2 10:28 slapd.d
 rm -rf slapd.d
 service slapd restart
 ```
-    
-# Enable Prometheus
+ 
+## Enable Prometheus
 
 1. Login to monitor host
 
@@ -33,18 +33,18 @@ service slapd restart
 ssh root@[monitor-host].symas.net
 ```
 
-2. configure service
+2. Edit the prometheus.yml config file.
 
-- replace [hostname1], [hostname2], [hostname3], [monitor-host]:
--e.g.
-  - ldap-01
-  - ldap1-01
-  - ldap2-01
-  - monitor-01
+- replace tags [hostname1], [hostname2], [hostname3], [monitor-host]:
+- with your hostnames. e.g. ldap-99, ldap1-99, ldap2-99 and monitor-99
 
-If machine set is '01'
+Edit file:
+```
+vi /etc/prometheus/prometheus.yml
+```
 
-```/etc/prometheus/prometheus.yml
+paste contents:
+```
 global:
   scrape_interval: 15s
 
@@ -67,6 +67,9 @@ alerting:
 rule_files:
   - "openldap_alerts.yml"
 ```
+
+replace tags
+save file
 
 3. restart service
 
@@ -118,7 +121,7 @@ curl -sG "http://localhost:9090/api/v1/series" --data-urlencode 'match[]={__name
 curl -sG "http://localhost:9090/api/v1/query" --data-urlencode 'query={__name__=~".+"}'
 ```
 
-# Enable Grafana
+## Enable Grafana
 
 1. Login to monitor host
 
@@ -133,7 +136,9 @@ ssh root@[monitor-host].symas.net
 It connects grafana with prometheus's time-series database.
 
 a. edit
-```/etc/grafana/provisioning/datasources/prometheus-datasource.yml
+```/etc/grafana/provisioning/datasources/prometheus-datasource.yml```
+
+```
 apiVersion: 1
 
 datasources:
@@ -152,8 +157,8 @@ chown grafana: /etc/grafana/provisioning/datasources/prometheus-datasource.yml
 
 3. enable grafana dashboard
 
-a. edit
-```/etc/grafana/provisioning/dashboards/symas-dashboard.yaml
+a. edit ```/etc/grafana/provisioning/dashboards/symas-dashboard.yaml```
+```
 apiVersion: 1
 
 providers:
@@ -204,7 +209,7 @@ admin/...
 - on the side panel, click on "Drilldown", and then "Metrics"
 - slapd - contains mtail stats
 
-# Enable Telegraf on LDAP2
+## Enable Telegraf on LDAP2
 
 1. Login to ldap2 host
 
@@ -219,7 +224,8 @@ ssh root@[ldap2-host].ldapcon2026.symas.net
 - replace entire contents of the telegraf.conf (default) file with ...
 - replace the [hostname] with ldap2's hostname:
 
-```/etc/telegraf/telegraf.conf
+edit ```/etc/telegraf/telegraf.conf```
+```
 [global_tags]
   dc = "ldap-test" #Example: ldap-dev, ldap-production
 
@@ -242,7 +248,8 @@ ssh root@[ldap2-host].ldapcon2026.symas.net
 
 a. input ldap
 
-```/etc/telegraf/telegraf.d/input-openldap.conf
+edit ```/etc/telegraf/telegraf.d/input-openldap.conf```
+```
 [[inputs.ldap]]
   dialect = "openldap"
   bind_mechanism = "EXTERNAL"
@@ -253,14 +260,16 @@ a. input ldap
 
 b. input mtail
 
-```/etc/telegraf/telegraf.d/input-mtail.conf
+edit ```/etc/telegraf/telegraf.d/input-mtail.conf```
+```
 [[inputs.prometheus]]
   urls = ["http://localhost:3903/metrics"]
 ```
 
 c. input system
 
-```/etc/telegraf/telegraf.d/input-system.conf
+edit ```/etc/telegraf/telegraf.d/input-system.conf```
+```
 [[inputs.cpu]]
   percpu = true
   totalcpu = true
@@ -282,7 +291,8 @@ d. output prometheus
 
 - replace [hostname]:
 
-```/etc/telegraf/telegraf.d/output-prometheus.conf
+edit ```/etc/telegraf/telegraf.d/output-prometheus.conf```
+```
 [[outputs.prometheus_client]]
   listen = ":9100"
   tls_cert = "/opt/symas/ssl/[hostname].ldapcon2026.symas.net.crt"
@@ -434,9 +444,9 @@ e. verify ldap2's monitor stats are updating in grafana console
 - Not working yet? Might take a minute.
 - After waiting a few minutes, verify that the firewall is open between ldap2 and the monitor machine.
 
-# Extra Credit
+## Extra Credit
 
-## Add New Panels
+### Add New Panels
 
 Query Grafana for metrics available: Drilldown->metrics
 
@@ -455,9 +465,9 @@ openldap_modify_operations_completed
 openldap_add_operations_completed\
 
 
-## Add New Mtail Counters
+### Add New Mtail Counters
 
-### slapd denials
+#### slapd denials
 
 - slapd denied messages
 - insufficient access
@@ -476,7 +486,7 @@ slapd_denied[$err]++
 sum(rate(slapd_denied{ host="ldap1-00.ldapcon2026.symas.net"}[$__rate_interval]))
 ```
 
-### syncrepl consumer
+#### syncrepl consumer
 
 - replication retries
 - refresh cycles
@@ -496,7 +506,7 @@ counter slapd_syncrepl_cons_refresh_start_total by rid
 }
 ```
 
-### syncrepl provider
+#### syncrepl provider
 
 - Provider throughput by sync op type.
 - Per-consumer (rid) push count.
@@ -514,22 +524,24 @@ counter slapd_syncrepl_prov_cookie_total by rid
 }
 ```
 
-# Troubleshooting
+## Troubleshooting
 
-## Mtail
+### Mtail
 
-### Logs
+#### Journal
 
 ```bash
 journalctl -u mtail
 ```
-## Jmeter troubleshooting
+### Jmeter
 
-### Logs
+#### Logs
 
-/var/log/loadtest.log
+```bash
+tail -f /var/log/loadtest.log
+```
 
-### Workaround on PW Policies
+#### Workaround on PW Policies
 
 In case the env has elaborate rules that breaks the tests, add to slapd.conf to workaround
 
@@ -537,34 +549,32 @@ In case the env has elaborate rules that breaks the tests, add to slapd.conf to 
 ppolicy_rule require_password=no no_policy stop
 ```
 
-## Prometheus
+### Prometheus
 
-### Logs
-
-#### More
+#### Journal
 
 ```bash
 journalctl -u  prometheus
 journalctl -u prometheus | grep -i "err\|tls\|cert\|fail"
 ```
 
-## Telegraf
+### Telegraf
 
-### Journal
+#### Journal
 
 ```bash
 # journalctl -u telegraf -f
 ```
 
-### Logs
+#### Logs
 
 ```bash
 # tail -f /var/log/telegraf/telegraf.log 
 ```
 
-## Grafana
+### Grafana
 
-### Logs
+#### Logs
 
 ```bash
 tail -f /var/log/grafana/grafana.log
