@@ -439,7 +439,7 @@ e. verify ldap2's monitor stats are updating in grafana console
 
 # Extra Credit
 
-Build Dashboards
+## Add New Panels
 
 Query Grafana for metrics available: Drilldown->metrics
 
@@ -458,6 +458,73 @@ openldap_modify_operations_completed
 openldap_add_operations_completed\
 
 
+## Add New Mtail Counters
+
+- slapd denied messages
+- insufficient access
+- unwilling to perform
+
+```mtail.conf
+counter slapd_denied by err
+
+// + SLAPD_THREAD_OR_PROCESS + /conn=\d+ op=\d+ .*RESULT tag=\d+ err=(?P<err>50|32|53)\b/ {
+    slapd_denied[$err]++
+}
+```
+counter slapd_denied by err
+
+// + SLAPD_THREAD_OR_PROCESS + /conn=\d+ op=\d+ .*RESULT tag=\d+ err=(?P<err>50|32|53)\b/ {
+slapd_denied[$err]++
+}
+
+```promql
+sum(rate(slapd_denied{ host="ldap1-00.ldapcon2026.symas.net"}[$__rate_interval]))
+```
+
+## syncrepl consumer
+
+-  replication retries
+- refresh cycles
+
+```mtail.conf
+counter slapd_syncrepl_cons_retry_total by rid, errno
+counter slapd_syncrepl_cons_refresh_start_total by rid
+
+// consumer: syncrepl retry attempts
+// + SLAPD_THREAD_OR_PROCESS + /do_syncrepl: rid=(?P<rid>\d+) rc -(?P<errno>\d+) retrying( \((?P<left>\d+) retries left\))?$/ {
+    slapd_syncrepl_cons_retry_total[$rid, $errno]++
+}
+
+// consumer: refresh cycle started
+// + SLAPD_THREAD_OR_PROCESS + /ldap_sync_search: rid=(?P<rid>\d+) starting refresh/ {
+    slapd_syncrepl_cons_refresh_start_total[$rid]++
+}
+```
+
+### syncrepl provider
+
+- Provider throughput by sync op type.
+- Per-consumer (rid) push count.
+
+```mtail.conf
+counter slapd_syncrepl_prov_sent_total by op
+counter slapd_syncrepl_prov_cookie_total by rid
+
+/ syncprov_sendresp: sending LDAP_SYNC_(?P<op>[A-Z_]+),/ {
+  slapd_syncrepl_prov_sent_total[$op]++
+}
+
+/ syncprov_sendresp: cookie=rid=(?P<rid>\d+),sid=\d+,csn=/ {
+  slapd_syncrepl_prov_cookie_total[$rid]++
+}
+```
+
+
+# Mtail troubleshooting
+
+```bash
+journalctl -u mtail
+```
 # Jmeter troubleshooting
 
 
