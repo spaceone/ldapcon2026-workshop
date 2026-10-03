@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Monitoring Workshop</title>
+<link rel="stylesheet" href="print.css">
+</head>
+<body>
+<main>
+<h1>Setup Workshop</h1>
+<h2>sample env</h2>
+<pre><code>load balancer / jmeter machine: ldap-99.ldapcon2026.symas.net
+ldap provider :ldap1-99.ldapcon2026.symas.net
+ldap consumer: ldap2-99.ldapcon2026.symas.net
+monitor host: monitor-99.ldapcon2026.symas.net
+</code></pre>
+<h2>preparation</h2>
+<p>If you are using cn=config, change it back.</p>
+<pre><code class="language-bash">cd /opt/symas/etc/openldap/
+ls -al .
+
+root@ldap1-96:/opt/symas/etc/openldap# ls -al
+lrwxrwxrwx 1 root     root       25 Oct  1 21:31 slapd.conf -&gt; /etc/opt/symas/slapd.conf
+drwxr-xr-x 3 openldap openldap 4096 Oct  2 10:28 slapd.d
+
+rm -rf slapd.d
+service slapd restart
+</code></pre>
+<h2>Enable Prometheus</h2>
+<ol>
+<li>Login to monitor host</li>
+</ol>
+<ul>
+<li>replace [monitor-host]:</li>
+</ul>
+<pre><code class="language-bash">ssh root@[monitor-host].symas.net
+</code></pre>
+<ol start="2">
+<li>Edit the prometheus.yml config file.</li>
+</ol>
+<ul>
+<li>replace tags [hostname1], [hostname2], [hostname3], [monitor-host]:</li>
+<li>with your hostnames. e.g. ldap-99, ldap1-99, ldap2-99 and monitor-99</li>
+</ul>
+<p>Edit file:</p>
+<pre><code>vi /etc/prometheus/prometheus.yml
+</code></pre>
+<p>paste contents:</p>
+<pre><code>global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'telegraf'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['[hostname1].ldapcon2026.symas.net:9100','[hostname2].ldapcon2026.symas.net:9100','[hostname3].ldapcon2026.symas.net:9100']
+    scheme: https
+    tls_config:
+      cert_file: /opt/symas/ssl/[monitor-host].ldapcon2026.symas.net.crt
+      key_file: /opt/symas/ssl/[monitor-host].ldapcon2026.symas.net.key
+      ca_file: /opt/symas/ssl/ca.crt
+      insecure_skip_verify: false
+alerting:
+  alertmanagers:
+  - static_configs:
+    - targets:
+      - 'localhost:9093'
+rule_files:
+  - &quot;openldap_alerts.yml&quot;
+</code></pre>
+<p>replace tags
+save file</p>
+<ol start="3">
+<li>restart service</li>
+</ol>
+<pre><code class="language-bash">service prometheus restart
+</code></pre>
+<ol start="4">
+<li>test/verify</li>
+</ol>
+<p>These tests are optional.</p>
+<pre><code class="language-bash">service prometheus status
+journalctl -u  prometheus
+
+Sep 26 22:21:52 monitor-01.ldapcon2026.symas.net prometheus[15398]: time=2026-09-26T22:21:52.655Z level=INFO source=manager.go:176 msg=&quot;Starting rule manager...&quot; component=&quot;rule manager&quot;
+</code></pre>
+<h1>Not good if you see this:</h1>
+<pre><code>Sep 26 22:21:57 monitor-01.ldapcon2026.symas.net prometheus[15398]: time=2026-09-26T22:21:57.657Z level=ERROR source=manager.go:196 msg=&quot;error creating new scrape pool&quot; component=&quot;scrape manager&quot; err=&quot;err&gt;
+
+# verify the targets are being scraped:
+curl -s &quot;http://localhost:9090/api/v1/query&quot; --data-urlencode 'query=up'
+
+# should return a ton of data:
+curl -sG &quot;http://localhost:9090/api/v1/query&quot; --data-urlencode 'query={__name__=~&quot;.+&quot;}' 
+</code></pre>
+<p>more stats</p>
+<pre><code class="language-bash"># check a few of the metrics being tracked:
+curl -s &quot;http://localhost:9090/api/v1/query&quot; --data-urlencode 'query=openldap_connections_current'
+curl -s &quot;http://localhost:9090/api/v1/query&quot; --data-urlencode 'query=cpu_usage_idle'
+curl -s &quot;http://localhost:9090/api/v1/query&quot; --data-urlencode 'query=mtail_line_count'
+</code></pre>
+<p>these return lots of data</p>
+<pre><code class="language-bash"># show all metric names:
+curl -s &quot;http://localhost:9090/api/v1/label/__name__/values&quot;
+# show all label names:
+curl -s &quot;http://localhost:9090/api/v1/labels&quot;
+# Show all currently stored series
+curl -sG &quot;http://localhost:9090/api/v1/series&quot; --data-urlencode 'match[]={__name__=~&quot;.+&quot;}'
+# Show the latest value for every metric
+curl -sG &quot;http://localhost:9090/api/v1/query&quot; --data-urlencode 'query={__name__=~&quot;.+&quot;}'
+</code></pre>
+<h2>Enable Grafana</h2>
+<ol>
+<li>Login to monitor host</li>
+</ol>
+<ul>
+<li>replace [monitor-host]:</li>
+</ul>
+<pre><code class="language-bash">ssh root@[monitor-host].symas.net
+</code></pre>
+<ol start="2">
+<li>configure grafana datasource</li>
+</ol>
+<p>It connects grafana with prometheus's time-series database.</p>
+<p>a. edit
+<code>/etc/grafana/provisioning/datasources/prometheus-datasource.yml</code></p>
+<pre><code>apiVersion: 1
+
+datasources:
+  - name: SymasTest
+    type: prometheus
+    access: proxy
+    url: http://localhost:9090
+    isDefault: true
+    uid: symas-openldap
+</code></pre>
+<p>b. chown</p>
+<pre><code class="language-bash">chown grafana: /etc/grafana/provisioning/datasources/prometheus-datasource.yml
+</code></pre>
+<ol start="3">
+<li>enable grafana dashboard</li>
+</ol>
+<p>a. edit <code>/etc/grafana/provisioning/dashboards/symas-dashboard.yaml</code></p>
+<pre><code>apiVersion: 1
+
+providers:
+ - name: 'symas-openldap'
+   orgId: 1
+   folder: ''
+   folderUid: ''
+   type: file
+   options:
+     path: /var/lib/grafana/dashboards                           
+</code></pre>
+<p>b. chown</p>
+<pre><code class="language-bash">chown grafana: /etc/grafana/provisioning/dashboards/symas-dashboard.yaml
+</code></pre>
+<ol start="4">
+<li>stage grafana dashboard</li>
+</ol>
+<pre><code class="language-bash">cp /tmp/symas-openldap.json /var/lib/grafana/dashboards/
+</code></pre>
+<ol start="5">
+<li>restart grafana-server</li>
+</ol>
+<pre><code class="language-bash">service grafana-server restart
+</code></pre>
+<ol start="6">
+<li>loginto grafana</li>
+</ol>
+<ul>
+<li>replace [monitor-host] with your instance</li>
+</ul>
+<pre><code>https://[monitor-host].ldapcon2026.symas.net:3000
+</code></pre>
+<p>admin/...</p>
+<ol start="7">
+<li>Goto dashboard</li>
+</ol>
+<ul>
+<li>on the side panel, click on &quot;Dashboards&quot;</li>
+<li>click on &quot;OpenLDAP Monitor v3&quot;</li>
+<li>change the ldap hostname, view the stats</li>
+<li>why isn't ldap2 working? (hint, go to next section)</li>
+</ul>
+<ol start="8">
+<li>Drilldown Metrics</li>
+</ol>
+<ul>
+<li>on the side panel, click on &quot;Drilldown&quot;, and then &quot;Metrics&quot;</li>
+<li>slapd - contains mtail stats</li>
+</ul>
+<h2>Enable Telegraf on LDAP2</h2>
+<ol>
+<li>Login to ldap2 host</li>
+</ol>
+<ul>
+<li>replace [ldap2-host]:</li>
+</ul>
+<pre><code class="language-bash">ssh root@[ldap2-host].ldapcon2026.symas.net
+</code></pre>
+<ol start="2">
+<li>Basic setup for telegraf agent</li>
+</ol>
+<ul>
+<li>replace entire contents of the telegraf.conf (default) file with ...</li>
+<li>replace the [hostname] with ldap2's hostname:</li>
+</ul>
+<p>edit <code>/etc/telegraf/telegraf.conf</code></p>
+<pre><code>[global_tags]
+  dc = &quot;ldap-test&quot; #Example: ldap-dev, ldap-production
+
+[agent]
+  hostname = &quot;[hostname].ldapcon2026.symas.net&quot;
+  interval = &quot;3s&quot;
+  round_interval = true
+  metric_batch_size = 10000
+  metric_buffer_limit = 100000
+  flush_interval = &quot;10s&quot;
+  omit_hostname = false
+  logfile = &quot;/var/log/telegraf/telegraf.log&quot;
+  logfile_rotation_interval = &quot;48h&quot;
+  logfile_rotation_max_size = &quot;200MB&quot;
+  logfile_rotation_max_archives = 10
+  debug = false
+</code></pre>
+<ol start="3">
+<li>Enable telegraf plug-ins</li>
+</ol>
+<p>a. input ldap</p>
+<p>edit <code>/etc/telegraf/telegraf.d/input-openldap.conf</code></p>
+<pre><code>[[inputs.ldap]]
+  dialect = &quot;openldap&quot;
+  bind_mechanism = &quot;EXTERNAL&quot;
+  server = &quot;ldapi://%2Fvar%2Fsymas%2Frun%2Fldapi&quot;
+  interval = &quot;10s&quot;
+# log_level = &quot;debug&quot;
+</code></pre>
+<p>b. input mtail</p>
+<p>edit <code>/etc/telegraf/telegraf.d/input-mtail.conf</code></p>
+<pre><code>[[inputs.prometheus]]
+  urls = [&quot;http://localhost:3903/metrics&quot;]
+</code></pre>
+<p>c. input system</p>
+<p>edit <code>/etc/telegraf/telegraf.d/input-system.conf</code></p>
+<pre><code>[[inputs.cpu]]
+  percpu = true
+  totalcpu = true
+  collect_cpu_time = false
+  report_active = false
+  core_tags = false
+[[inputs.disk]]
+  ignore_fs = [&quot;ramfs&quot;, &quot;tmpfs&quot;, &quot;devtmpfs&quot;, &quot;devfs&quot;, &quot;iso9660&quot;, &quot;overlay&quot;, &quot;aufs&quot;, &quot;squashfs&quot;]
+[[inputs.diskio]]
+[[inputs.kernel]]
+[[inputs.mem]]
+[[inputs.processes]]
+[[inputs.swap]]
+[[inputs.system]]
+[[inputs.net]]
+</code></pre>
+<p>d. output prometheus</p>
+<ul>
+<li>replace [hostname]:</li>
+</ul>
+<p>edit <code>/etc/telegraf/telegraf.d/output-prometheus.conf</code></p>
+<pre><code>[[outputs.prometheus_client]]
+  listen = &quot;:9100&quot;
+  tls_cert = &quot;/opt/symas/ssl/[hostname].ldapcon2026.symas.net.crt&quot;
+  tls_key  = &quot;/opt/symas/ssl/[hostname].ldapcon2026.symas.net.key&quot;
+  tls_allowed_cacerts = [&quot;/opt/symas/ssl/ca.crt&quot;]
+</code></pre>
+<ol start="4">
+<li>Grant telegraf user access to crypto artifacts</li>
+</ol>
+<ul>
+<li>replace [hostname]:</li>
+</ul>
+<pre><code class="language-bash">usermod -aG openldap telegraf
+# replace with actual hostname:
+chmod g+r /opt/symas/ssl/[hostname].ldapcon2026.symas.net.key
+</code></pre>
+<ol start="5">
+<li>restart daemon</li>
+</ol>
+<pre><code class="language-bash">service telegraf restart
+</code></pre>
+<p>If startup fails ...</p>
+<pre><code class="language-bash">journalctl -u telegraf
+</code></pre>
+<ol start="6">
+<li>Verify Telegraf Metrics</li>
+</ol>
+<ul>
+<li>replace [hostname]:</li>
+</ul>
+<pre><code class="language-bash">curl -sk https://127.0.0.1:9100/metrics   --cert /opt/symas/ssl/[hostname].ldapcon2026.symas.net.crt   --key  /opt/symas/ssl/[hostname].ldapcon2026.symas.net.key   | grep -i ldap
+
+# e.g.
+curl -sk https://127.0.0.1:9100/metrics   --cert /opt/symas/ssl/ldap2-test.ldapcon2026.symas.net.crt   --key  /opt/symas/ssl/ldap2-test.ldapcon2026.symas.net.key   | grep -i ldap
+</code></pre>
+<ol start="7">
+<li>Open firewall so prometheus can scrape stats</li>
+</ol>
+<p>We are allowing the monitor host access to the prometheus port.</p>
+<ul>
+<li>replace [hostname]:</li>
+</ul>
+<p>Ping the monitor host:</p>
+<pre><code class="language-bash">ping [hostname].ldapcon2026.symas.net
+
+# e.g.
+ping monitor-01.ldapcon2026.symas.net
+</code></pre>
+<ul>
+<li>substitute x.x.x.x with IP fr</li>
+</ul>
+<pre><code class="language-bash">firewall-cmd --zone=public --add-rich-rule='rule family=&quot;ipv4&quot; source address=&quot;x.x.x.x&quot; port protocol=&quot;tcp&quot; port=&quot;9100&quot; accept'
+firewall-cmd --permanent --zone=public --add-rich-rule='rule family=&quot;ipv4&quot; source address=&quot;x.x.x.x&quot; port protocol=&quot;tcp&quot; port=&quot;9100&quot; accept'
+
+# e.g.
+firewall-cmd --zone=public --add-rich-rule='rule family=&quot;ipv4&quot; source address=&quot;172.236.21.37&quot; port protocol=&quot;tcp&quot; port=&quot;9100&quot; accept'
+firewall-cmd --permanent --zone=public --add-rich-rule='rule family=&quot;ipv4&quot; source address=&quot;172.236.21.37&quot; port protocol=&quot;tcp&quot; port=&quot;9100&quot; accept'
+</code></pre>
+<ol start="8">
+<li>Verify on monitor host</li>
+</ol>
+<ul>
+<li>replace [monitor-hostname]:</li>
+<li>replace [hostname]:</li>
+</ul>
+<pre><code class="language-bash">curl -k --cert /opt/symas/ssl/[monitor-hostname].ldapcon2026.symas.net.crt --key /opt/symas/ssl/[monitor-hostname].ldapcon2026.symas.net.key https:/[hostname].ldapcon2026.symas.net:9100/metrics
+
+# e.g.
+curl -k --cert /opt/symas/ssl/monitor-01.ldapcon2026.symas.net.crt --key /opt/symas/ssl/monitor-01.ldapcon2026.symas.net.key https:/ldap2-01.ldapcon2026.symas.net:9100/metrics
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0# HELP cpu_usage_guest Telegraf collected metric
+# TYPE cpu_usage_guest gauge
+cpu_usage_guest{cpu=&quot;cpu-total&quot;,dc=&quot;ldap-test&quot;,host=&quot;ldap2-01.ldapcon2026.symas.net&quot;} 0
+...
+</code></pre>
+<ol start="9">
+<li>
+<p>Verify in Grafana console (after it has been enabled)</p>
+</li>
+<li>
+<p>Where are the stats from the slapd monitor database?</p>
+</li>
+</ol>
+<ul>
+<li>The telegraf ldap plugin has enabled connecting with slapd w/ unix socket and it's not working.</li>
+<li>These commands are run from ldap2</li>
+</ul>
+<pre><code class="language-bash"># It does works as root:
+ldapsearch -QLLLb cn=monitor -s one 1.1 -Y EXTERNAL -H ldapi:///
+
+# But it doesn't work as the telegraf user: 
+sudo -u telegraf /opt/symas/bin/ldapsearch -QLLLb cn=monitor -s one -Y EXTERNAL -H ldapi:/// 1.1
+No such object (32)
+</code></pre>
+<p>-- Why?</p>
+<ol start="11">
+<li>Enable telegraf to gather openldap monitor stats using unix sockets</li>
+</ol>
+<p>a. get the id for telegraf user</p>
+<pre><code class="language-bash">id telegraf
+uid=997(telegraf) gid=988(telegraf) groups=988(telegraf)
+root@ldap2-test:/opt/symas/etc/openldap# 
+</code></pre>
+<p>b. add authz-regexp for that user slapd.conf</p>
+<ul>
+<li>place telegraf's id in the authz-regexp for the monitor database (at the end of the file)</li>
+</ul>
+<pre><code class="language-/opt/symas/etc/openldap/slapd.conf">...
+database monitor
+
+access to *
+  by dn.exact=&quot;cn=monitoruser,ou=administrators,dc=example,dc=com&quot; read
+  by dn.exact=&quot;dc=example,dc=com&quot; write
+  by * none
+
+# Place it here:
+authz-regexp &quot;gidNumber=988\\+uidNumber=997,cn=peercred,cn=external,cn=auth&quot; &quot;dc=example,dc=com&quot;
+</code></pre>
+<p>c. restart the daemon</p>
+<pre><code class="language-bash">service slapd restart
+</code></pre>
+<p>d. verify</p>
+<pre><code class="language-bash"># as the telegraf user: 
+sudo -u telegraf /opt/symas/bin/ldapsearch -QLLLb cn=monitor -s one -Y EXTERNAL -H ldapi:/// 1.1
+dn: cn=Backends,cn=Monitor
+dn: cn=Connections,cn=Monitor
+dn: cn=Databases,cn=Monitor
+...
+</code></pre>
+<p>e. verify ldap2's monitor stats are updating in grafana console</p>
+<ul>
+<li>Not working yet? Might take a minute.</li>
+<li>After waiting a few minutes, verify that the firewall is open between ldap2 and the monitor machine.</li>
+</ul>
+<h2>Extra Credit</h2>
+<h3>Add New Panels</h3>
+<p>Query Grafana for metrics available: Drilldown-&gt;metrics</p>
+<p>Use search terms:
+slapd: mtail
+ldap: openldap monitor</p>
+<p>Here are some example:
+slapd_syncrepl_messages_bucket
+slapd_syncrepl_messages_count
+slapd_syncrepl_messages_sum
+slapd_ppolicy_expired
+slapd_tls_failure
+openldap_delete_operations_completed
+openldap_modify_operations_completed
+openldap_add_operations_completed\</p>
+<h3>Add New Mtail Counters</h3>
+<h4>slapd denials</h4>
+<ul>
+<li>slapd denied messages</li>
+<li>insufficient access</li>
+<li>unwilling to perform</li>
+</ul>
+<pre><code class="language-mtail.conf">counter slapd_denied by err
+
+// + SLAPD_THREAD_OR_PROCESS + /conn=\d+ op=\d+ .*RESULT tag=\d+ err=(?P&lt;err&gt;50|32|53)\b/ {
+slapd_denied[$err]++
+}
+</code></pre>
+<ul>
+<li>add a panel to Grafana</li>
+</ul>
+<pre><code class="language-promql">sum(rate(slapd_denied{ host=&quot;ldap1-00.ldapcon2026.symas.net&quot;}[$__rate_interval]))
+</code></pre>
+<h4>syncrepl consumer</h4>
+<ul>
+<li>replication retries</li>
+<li>refresh cycles</li>
+</ul>
+<pre><code class="language-mtail.conf">counter slapd_syncrepl_cons_retry_total by rid, errno
+counter slapd_syncrepl_cons_refresh_start_total by rid
+
+// consumer: syncrepl retry attempts
+// + SLAPD_THREAD_OR_PROCESS + /do_syncrepl: rid=(?P&lt;rid&gt;\d+) rc -(?P&lt;errno&gt;\d+) retrying( \((?P&lt;left&gt;\d+) retries left\))?$/ {
+    slapd_syncrepl_cons_retry_total[$rid, $errno]++
+}
+
+// consumer: refresh cycle started
+// + SLAPD_THREAD_OR_PROCESS + /ldap_sync_search: rid=(?P&lt;rid&gt;\d+) starting refresh/ {
+    slapd_syncrepl_cons_refresh_start_total[$rid]++
+}
+</code></pre>
+<h4>syncrepl provider</h4>
+<ul>
+<li>Provider throughput by sync op type.</li>
+<li>Per-consumer (rid) push count.</li>
+</ul>
+<pre><code class="language-mtail.conf">counter slapd_syncrepl_prov_sent_total by op
+counter slapd_syncrepl_prov_cookie_total by rid
+
+/ syncprov_sendresp: sending LDAP_SYNC_(?P&lt;op&gt;[A-Z_]+),/ {
+  slapd_syncrepl_prov_sent_total[$op]++
+}
+
+/ syncprov_sendresp: cookie=rid=(?P&lt;rid&gt;\d+),sid=\d+,csn=/ {
+  slapd_syncrepl_prov_cookie_total[$rid]++
+}
+</code></pre>
+<h2>Troubleshooting</h2>
+<h3>Mtail</h3>
+<h4>Journal</h4>
+<pre><code class="language-bash">journalctl -u mtail
+</code></pre>
+<h3>Jmeter</h3>
+<h4>Logs</h4>
+<pre><code class="language-bash">tail -f /var/log/loadtest.log
+</code></pre>
+<h4>Workaround on PW Policies</h4>
+<p>In case the env has elaborate rules that breaks the tests, add to slapd.conf to workaround</p>
+<pre><code class="language-slapd.conf">ppolicy_rule require_password=no no_policy stop
+</code></pre>
+<h3>Prometheus</h3>
+<h4>Journal</h4>
+<pre><code class="language-bash">journalctl -u  prometheus
+journalctl -u prometheus | grep -i &quot;err\|tls\|cert\|fail&quot;
+</code></pre>
+<h3>Telegraf</h3>
+<h4>Journal</h4>
+<pre><code class="language-bash"># journalctl -u telegraf -f
+</code></pre>
+<h4>Logs</h4>
+<pre><code class="language-bash"># tail -f /var/log/telegraf/telegraf.log 
+</code></pre>
+<h3>Grafana</h3>
+<h4>Logs</h4>
+<pre><code class="language-bash">tail -f /var/log/grafana/grafana.log
+</code></pre>
+</main>
+</body>
+</html>
