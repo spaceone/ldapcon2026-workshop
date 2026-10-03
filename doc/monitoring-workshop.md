@@ -177,9 +177,6 @@ chown grafana: /etc/grafana/provisioning/dashboards/symas-dashboard.yaml
 cp /tmp/symas-openldap.json /var/lib/grafana/dashboards/
 ```
 
-# dest: '/var/lib/grafana/dashboards/symas-openldap.json'
-# owner: grafana group: grafana mode: "0644"
-
 5. restart grafana-server
 
 ```bash
@@ -460,6 +457,8 @@ openldap_add_operations_completed\
 
 ## Add New Mtail Counters
 
+### slapd denials
+
 - slapd denied messages
 - insufficient access
 - unwilling to perform
@@ -468,22 +467,18 @@ openldap_add_operations_completed\
 counter slapd_denied by err
 
 // + SLAPD_THREAD_OR_PROCESS + /conn=\d+ op=\d+ .*RESULT tag=\d+ err=(?P<err>50|32|53)\b/ {
-    slapd_denied[$err]++
-}
-```
-counter slapd_denied by err
-
-// + SLAPD_THREAD_OR_PROCESS + /conn=\d+ op=\d+ .*RESULT tag=\d+ err=(?P<err>50|32|53)\b/ {
 slapd_denied[$err]++
 }
+```
 
+- add a panel to Grafana
 ```promql
 sum(rate(slapd_denied{ host="ldap1-00.ldapcon2026.symas.net"}[$__rate_interval]))
 ```
 
-## syncrepl consumer
+### syncrepl consumer
 
--  replication retries
+- replication retries
 - refresh cycles
 
 ```mtail.conf
@@ -519,23 +514,58 @@ counter slapd_syncrepl_prov_cookie_total by rid
 }
 ```
 
+# Troubleshooting
 
-# Mtail troubleshooting
+## Mtail
+
+### Logs
 
 ```bash
 journalctl -u mtail
 ```
-# Jmeter troubleshooting
+## Jmeter troubleshooting
 
-
-## Logs
+### Logs
 
 /var/log/loadtest.log
 
-## Workaround on PW Policies
+### Workaround on PW Policies
 
 In case the env has elaborate rules that breaks the tests, add to slapd.conf to workaround
 
 ```slapd.conf
 ppolicy_rule require_password=no no_policy stop
+```
+
+## Prometheus
+
+### Logs
+
+#### More
+
+```bash
+journalctl -u  prometheus
+journalctl -u prometheus | grep -i "err\|tls\|cert\|fail"
+```
+
+## Telegraf
+
+### Journal
+
+```bash
+# journalctl -u telegraf -f
+```
+
+### Logs
+
+```bash
+# tail -f /var/log/telegraf/telegraf.log 
+```
+
+## Grafana
+
+### Logs
+
+```bash
+tail -f /var/log/grafana/grafana.log
 ```
