@@ -402,7 +402,6 @@ a. get the id for telegraf user
 ```bash
 id telegraf
 uid=997(telegraf) gid=988(telegraf) groups=988(telegraf)
-root@ldap2-test:/opt/symas/etc/openldap# 
 ```
 
 b. add authz-regexp for that user slapd.conf
