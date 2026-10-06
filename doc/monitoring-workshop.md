@@ -348,7 +348,7 @@ ping [hostname].ldapcon2026.symas.net
 ping monitor-01.ldapcon2026.symas.net
 ```
 
-- substitute x.x.x.x with IP fr
+- replace `x.x.x.x` with the IP address of the monitor host. For IPv6 addresses, replace `family="ipv4"` with `family="ipv6"`.
 
 ```bash
 firewall-cmd --zone=public --add-rich-rule='rule family="ipv4" source address="x.x.x.x" port protocol="tcp" port="9100" accept'
